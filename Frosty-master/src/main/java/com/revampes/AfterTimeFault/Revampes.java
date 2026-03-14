@@ -26,6 +26,9 @@ import java.io.FileInputStream;
 import java.lang.invoke.MethodHandles;
 import java.util.function.Supplier;
 
+import com.revampes.AfterTimeFault.events.impl.SimpleChatEventHandler;
+import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
+
 public class Revampes implements ModInitializer {
 	public static final String MOD_ID = "revampes";
 	public static MinecraftClient mc;
@@ -80,6 +83,9 @@ public class Revampes implements ModInitializer {
 		EVENT_BUS.registerLambdaFactory("com.revampes.AfterTimeFault", (lookupInMethod, klass) -> (MethodHandles.Lookup) lookupInMethod.invoke(null, klass, MethodHandles.lookup()));
 		EVENT_BUS.subscribe(this);
 		EVENT_BUS.subscribe(new Rotations());
+		
+		ClientReceiveMessageEvents.GAME.register(SimpleChatEventHandler.INSTANCE);
+		
 		ConfigManager.createConfigDir();
 		modulesInitialized = false;
 	}

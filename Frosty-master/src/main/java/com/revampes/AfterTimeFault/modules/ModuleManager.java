@@ -74,6 +74,7 @@ public class ModuleManager {
     public static FastPlace fastPlace;
 //    public static Freecam freecam;
     public static CarnivalHelper carnivalHelper;
+    public static RagnarockTimer ragnarockTimer;
     public static GardenCleaner gardenCleaner;
     public static Cape cape;
     public static BlockAnimation blockAnimation;
@@ -130,6 +131,7 @@ public class ModuleManager {
         this.addModule(cape = new Cape());
         this.addModule(blockAnimation = new BlockAnimation());
         this.addModule(autoPetNotification = new AutoPetNotification());
+        this.addModule(ragnarockTimer = new RagnarockTimer());
         this.addModule(lifeSaverTimer = new com.revampes.AfterTimeFault.modules.impl.other.LifeSaverTimer());
         modules.sort(Comparator.comparing(Module::getName));
     }
