@@ -8,9 +8,9 @@ import net.minecraft.text.Text;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import com.revampes.AfterTimeFault.modules.ModuleManager;
+import com.revampes.AfterTimeFault.modules.impl.render.FancyDamageSplashModule;
 import com.revampes.AfterTimeFault.modules.impl.render.NickHider;
 
 @Mixin(EntityRenderer.class)
@@ -23,6 +23,11 @@ public abstract class EntityRendererMixin<T extends Entity, S extends EntityRend
     private void modifyRenderState(Entity entity, float tickDelta, CallbackInfoReturnable<S> cir) {
         S state = cir.getReturnValue();
         if (state == null) return;
+
+        if (FancyDamageSplashModule.shouldSuppressOriginalIndicator(entity)) {
+            state.displayName = null;
+            return;
+        }
 
         if (entity instanceof PlayerEntity player &&
                 ModuleManager.nickHider.isEnabled() &&

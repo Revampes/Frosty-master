@@ -61,6 +61,7 @@ public class ModuleManager {
     public static FreeLook freeLook;
     public static NoOverlay noOverlay;
     public static NoBlur noBlur;
+    public static FancyDamageSplashModule fancyDamageSplash;
     public static Title title;
     public static Commands commands;
     public static WoodNuker woodNuker;
@@ -115,6 +116,7 @@ public class ModuleManager {
         this.addModule(noHudElement = new NoHudElement());
         this.addModule(noOverlay = new NoOverlay());
         this.addModule(noBlur = new NoBlur());
+        this.addModule(fancyDamageSplash = new FancyDamageSplashModule());
         this.addModule(title = new Title());
         this.addModule(commands = new Commands());
         this.addModule(woodNuker = new WoodNuker());
