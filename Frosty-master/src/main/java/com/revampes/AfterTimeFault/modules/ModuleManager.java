@@ -80,6 +80,7 @@ public class ModuleManager {
     public static BlockAnimation blockAnimation;
     public static AutoPetNotification autoPetNotification;
     public static com.revampes.AfterTimeFault.modules.impl.other.LifeSaverTimer lifeSaverTimer;
+    public static com.revampes.AfterTimeFault.modules.impl.other.PanelCommand panelCommand;
 
     public void register() {
         this.addModule(tps = new TPS());
@@ -133,6 +134,7 @@ public class ModuleManager {
         this.addModule(autoPetNotification = new AutoPetNotification());
         this.addModule(ragnarockTimer = new RagnarockTimer());
         this.addModule(lifeSaverTimer = new com.revampes.AfterTimeFault.modules.impl.other.LifeSaverTimer());
+        this.addModule(panelCommand = new com.revampes.AfterTimeFault.modules.impl.other.PanelCommand());
         modules.sort(Comparator.comparing(Module::getName));
     }
 

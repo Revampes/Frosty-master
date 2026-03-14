@@ -7,6 +7,7 @@ import com.revampes.AfterTimeFault.Revampes;
 import com.revampes.AfterTimeFault.events.impl.SettingUpdateEvent;
 import com.revampes.AfterTimeFault.modules.Module;
 import com.revampes.AfterTimeFault.modules.ModuleManager;
+import com.revampes.AfterTimeFault.modules.impl.other.PanelCommand;
 import com.revampes.AfterTimeFault.settings.Setting;
 import com.revampes.AfterTimeFault.settings.impl.*;
 
@@ -21,6 +22,7 @@ public class ConfigManager {
     private static final Path CAPE_DIR = MinecraftClient.getInstance().runDirectory.toPath().resolve("config/Revampes/cape");
     private static final Path DEFAULT_CONFIG = CONFIG_DIR.resolve("default.json");
     private static final Path SERVER_CONFIG = CONFIG_DIR.resolve("servers.json");
+    private static final Path PANEL_COMMAND_CONFIG = CONFIG_DIR.resolve("panel_commands.json");
     private static final Gson gson = new GsonBuilder().setPrettyPrinting().create();
 
     private static JsonObject serverConfig;
@@ -140,6 +142,69 @@ public class ConfigManager {
         if (serverConfig == null) return;
         serverConfig.addProperty("saved_server", server);
         saveServerConfig();
+    }
+
+    public static List<PanelCommand.CommandEntry> loadPanelCommands() {
+        List<PanelCommand.CommandEntry> commands = new ArrayList<>(Arrays.asList(
+                new PanelCommand.CommandEntry("Warp Hub", "/warp hub"),
+                new PanelCommand.CommandEntry("Island", "/is"),
+                new PanelCommand.CommandEntry("Storage", "/storage"),
+                new PanelCommand.CommandEntry("Auction", "/ah")
+        ));
+
+        if (!Files.exists(PANEL_COMMAND_CONFIG)) {
+            savePanelCommands(commands);
+            return commands;
+        }
+
+        try (Reader reader = Files.newBufferedReader(PANEL_COMMAND_CONFIG)) {
+            JsonArray array = gson.fromJson(reader, JsonArray.class);
+            if (array != null) {
+                commands.clear();
+                for (JsonElement element : array) {
+                    if (element == null || element.isJsonNull()) continue;
+
+                    if (element.isJsonPrimitive()) {
+                        String cmd = element.getAsString();
+                        commands.add(new PanelCommand.CommandEntry(cmd, cmd));
+                        continue;
+                    }
+
+                    if (!element.isJsonObject()) continue;
+                    JsonObject object = element.getAsJsonObject();
+                    String name = object.has("name") ? object.get("name").getAsString() : "Command";
+                    String command = object.has("command") ? object.get("command").getAsString() : "/help";
+                    commands.add(new PanelCommand.CommandEntry(name, command));
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to load panel commands config: " + e.getMessage());
+        }
+
+        if (commands.isEmpty()) {
+            commands.add(new PanelCommand.CommandEntry("Help", "/help"));
+            savePanelCommands(commands);
+        }
+
+        return commands;
+    }
+
+    public static void savePanelCommands(List<PanelCommand.CommandEntry> commands) {
+        try (Writer writer = Files.newBufferedWriter(PANEL_COMMAND_CONFIG)) {
+            JsonArray array = new JsonArray();
+
+            for (PanelCommand.CommandEntry entry : commands) {
+                if (entry == null) continue;
+                JsonObject object = new JsonObject();
+                object.addProperty("name", entry.getName());
+                object.addProperty("command", entry.getCommand());
+                array.add(object);
+            }
+
+            gson.toJson(array, writer);
+        } catch (IOException e) {
+            System.err.println("Failed to save panel commands config: " + e.getMessage());
+        }
     }
 
     public static void saveConfig() {
