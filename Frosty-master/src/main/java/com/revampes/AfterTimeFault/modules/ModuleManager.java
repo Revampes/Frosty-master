@@ -48,6 +48,7 @@ public class ModuleManager {
     public static SeaLumiesNuker seaLumiesNuker;
     public static FrozenTreasure frozenTreasure;
     public static AxolotlESP axolotlESP;
+    public static InvisbugESP invisbugESP;
     public static AntiBot antiBot;
     public static PlayerESP playerESP;
 //    public static Nametags nametags;
@@ -102,6 +103,7 @@ public class ModuleManager {
         this.addModule(seaLumiesNuker = new SeaLumiesNuker());
 //        this.addModule(blockOverlay = new BlockOverlay());
         this.addModule(axolotlESP = new AxolotlESP());
+        this.addModule(invisbugESP = new InvisbugESP());
         this.addModule(antiBot = new AntiBot());
         this.addModule(playerESP = new PlayerESP());
 //        this.addModule(nametags = new Nametags());

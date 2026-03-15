@@ -20,6 +20,7 @@ import com.revampes.AfterTimeFault.modules.Module;
 import com.revampes.AfterTimeFault.modules.ModuleManager;
 import com.revampes.AfterTimeFault.utility.Rotations;
 import com.revampes.AfterTimeFault.utility.Utils;
+import com.revampes.AfterTimeFault.utility.LocationUtils;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -83,8 +84,7 @@ public class Revampes implements ModInitializer {
 		EVENT_BUS.registerLambdaFactory("com.revampes.AfterTimeFault", (lookupInMethod, klass) -> (MethodHandles.Lookup) lookupInMethod.invoke(null, klass, MethodHandles.lookup()));
 		EVENT_BUS.subscribe(this);
 		EVENT_BUS.subscribe(new Rotations());
-		
-		ClientReceiveMessageEvents.GAME.register(SimpleChatEventHandler.INSTANCE);
+                LocationUtils.init();
 		
 		ConfigManager.createConfigDir();
 		modulesInitialized = false;

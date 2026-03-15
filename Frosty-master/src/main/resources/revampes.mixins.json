@@ -43,6 +43,7 @@
     "TextVisitFactoryMixin",
     "Vec3dMixin",
     "WorldRendererMixin",
+    "ParticleManagerMixin",
     "accessor.InGameHudAccessor",
     "accessor.KeyBindingAccessor",
     "accessor.MinecraftClientAccessor",
