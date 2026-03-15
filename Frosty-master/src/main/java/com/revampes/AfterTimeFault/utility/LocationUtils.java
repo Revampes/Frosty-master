@@ -76,4 +76,37 @@ public class LocationUtils {
 
         return "Unknown";
     }
+
+    /**
+     * Checks if the player is currently in a Dungeon (Catacombs).
+     */
+    public static boolean isInDungeon() {
+        if (mc.getNetworkHandler() == null) return false;
+
+        Collection<PlayerListEntry> playerList = mc.getNetworkHandler().getPlayerList();
+        
+        for (PlayerListEntry entry : playerList) {
+            String tabName = "";
+
+            if (entry.getDisplayName() != null) {
+                tabName = entry.getDisplayName().getString();
+            } else if (entry.getProfile() != null && entry.getProfile().name() != null) {
+                tabName = entry.getProfile().name();
+            }
+
+            if (tabName != null) {
+                tabName = tabName.replaceAll("(?i)\\\\u00A7[0-9A-FK-OR]", "");
+                
+                if (tabName.contains("Dungeon: Catacombs") || tabName.contains("Dungeon") || tabName.contains("Catacombs")) {
+                    return true;
+                }
+            }
+        }
+
+        if (cachedTabArea != null && (cachedTabArea.contains("Dungeon") || cachedTabArea.contains("Catacombs"))) {
+            return true;
+        }
+
+        return false;
+    }
 }

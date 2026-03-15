@@ -18,6 +18,7 @@ import com.revampes.AfterTimeFault.modules.impl.movement.GuiMove;
 import com.revampes.AfterTimeFault.modules.impl.movement.Sprint;
 import com.revampes.AfterTimeFault.modules.impl.other.*;
 import com.revampes.AfterTimeFault.modules.impl.render.*;
+import com.revampes.AfterTimeFault.modules.impl.dungeon.*;
 import com.revampes.AfterTimeFault.modules.impl.render.blockanimation.BlockAnimation;
 import com.revampes.AfterTimeFault.settings.Setting;
 
@@ -83,6 +84,7 @@ public class ModuleManager {
     public static AutoPetNotification autoPetNotification;
     public static com.revampes.AfterTimeFault.modules.impl.other.LifeSaverTimer lifeSaverTimer;
     public static com.revampes.AfterTimeFault.modules.impl.other.PanelCommand panelCommand;
+    public static SecretClick secretClick;
 
     public void register() {
         this.addModule(tps = new TPS());
@@ -139,6 +141,7 @@ public class ModuleManager {
         this.addModule(ragnarockTimer = new RagnarockTimer());
         this.addModule(lifeSaverTimer = new com.revampes.AfterTimeFault.modules.impl.other.LifeSaverTimer());
         this.addModule(panelCommand = new com.revampes.AfterTimeFault.modules.impl.other.PanelCommand());
+        this.addModule(secretClick = new SecretClick());
         modules.sort(Comparator.comparing(Module::getName));
     }
 
