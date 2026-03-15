@@ -190,6 +190,24 @@ public class RenderUtils {
     public static void drawBox(MatrixStack stack, BlockPos bp, Color c, double lineWidth) {
         drawBox(stack, new Box(bp), c, lineWidth);
     }
+
+    public static void drawHighlight(MatrixStack stack, Box box, Color fillColor, Color outlineColor, boolean throughWalls, String mode) {
+        if (throughWalls) {
+            org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
+        }
+
+        if ("Filled".equals(mode) || "Filled Outline".equals(mode)) {
+            drawBoxFilled(stack, box, fillColor);
+        }
+        if ("Outline".equals(mode) || "Filled Outline".equals(mode)) {
+            drawBox(stack, box, outlineColor, 2.0);
+        }
+
+        if (throughWalls) {
+            org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
+        }
+    }
+
     public static void outlineEntity(MatrixStack matrices, Entity entity, Color color, float lineWidth, float partialTicks) {
         Box box = entity.getBoundingBox();
 
