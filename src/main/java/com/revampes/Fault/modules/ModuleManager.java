@@ -82,8 +82,8 @@ public class ModuleManager {
     public static Cape cape;
     public static BlockAnimation blockAnimation;
     public static AutoPetNotification autoPetNotification;
-    public static com.revampes.Fault.modules.impl.other.LifeSaverTimer lifeSaverTimer;
-    public static com.revampes.Fault.modules.impl.other.PanelCommand panelCommand;
+    public static LifeSaverTimer lifeSaverTimer;
+    public static PanelCommand panelCommand;
     public static AutoSellModule AutoSellModule;
     public static SecretClick secretClick;
     public static MobHighlight mobHighlight;

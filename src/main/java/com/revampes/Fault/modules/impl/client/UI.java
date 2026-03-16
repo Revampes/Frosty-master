@@ -36,14 +36,14 @@ public class UI extends Module {
         if (!Utils.nullCheck()) {
             return;
         }
-        if (mc.currentScreen instanceof ClickGui) {
+        if (mc.currentScreen instanceof ClickGui || mc.currentScreen instanceof com.revampes.Fault.gui.screen.HudEditorScreen) {
             mc.setScreen(null);
         }
     }
 
     @Override
     public void onUpdate() {
-        if (!(mc.currentScreen instanceof ClickGui)) {
+        if (!(mc.currentScreen instanceof ClickGui) && !(mc.currentScreen instanceof com.revampes.Fault.gui.screen.HudEditorScreen)) {
             this.disable();
         }
     }

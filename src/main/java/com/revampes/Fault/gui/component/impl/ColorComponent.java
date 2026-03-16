@@ -11,16 +11,29 @@ import static com.revampes.Fault.Revampes.mc;
 
 public class ColorComponent extends Component {
     private final ColorSetting setting;
-    private int draggingSlider = -1; // 0=R, 1=G, 2=B, 3=A
+    private int draggingMode = 0; // 0=none, 1=SV, 2=Hue, 3=Alpha
+    
+    private float hue = 0.0f;
+    private float saturation = 1.0f;
+    private float brightness = 1.0f;
+    private boolean initializedHSB = false;
 
     public ColorComponent(ColorSetting setting, float x, float y, float width, float height) {
         super(x, y, width, height);
         this.setting = setting;
     }
 
+    private void updateHSBFromSetting() {
+        float[] hsb = Color.RGBtoHSB(setting.getRed(), setting.getGreen(), setting.getBlue(), null);
+        hue = hsb[0];
+        saturation = hsb[1];
+        brightness = hsb[2];
+        initializedHSB = true;
+    }
+
     @Override
     public float getHeight() {
-        return setting.isExpanded() ? super.getHeight() + 45 : super.getHeight();
+        return setting.isExpanded() ? super.getHeight() + 80 : super.getHeight();
     }
 
     @Override
@@ -31,6 +44,17 @@ public class ColorComponent extends Component {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         if (!setting.isVisible()) return;
+        
+        if (!initializedHSB) {
+            updateHSBFromSetting();
+        } else if (draggingMode == 0) {
+            Color currentRgb = new Color(Color.HSBtoRGB(hue, saturation, brightness));
+            if (currentRgb.getRed() != setting.getRed() || 
+                currentRgb.getGreen() != setting.getGreen() || 
+                currentRgb.getBlue() != setting.getBlue()) {
+                updateHSBFromSetting();
+            }
+        }
 
         boolean isLight = ModuleManager.ui.clickGuiColor.getValue() == 0;
         int textColor = isLight ? 0xFF000000 : 0xFFFFFFFF;
@@ -48,46 +72,116 @@ public class ColorComponent extends Component {
         context.fill((int) boxX, (int) boxY, (int) (boxX + boxWidth), (int) (boxY + baseHeight - 4), setting.getRGB());
 
         if (setting.isExpanded()) {
-            float sliderY = y + baseHeight + 2;
-            renderSlider(context, mouseX, mouseY, "R", setting.getRed(), 0, sliderY, new Color(255, 100, 100).getRGB());
-            renderSlider(context, mouseX, mouseY, "G", setting.getGreen(), 1, sliderY + 11, new Color(100, 255, 100).getRGB());
-            renderSlider(context, mouseX, mouseY, "B", setting.getBlue(), 2, sliderY + 22, new Color(100, 100, 255).getRGB());
-            renderSlider(context, mouseX, mouseY, "A", setting.getAlpha(), 3, sliderY + 33, new Color(200, 200, 200).getRGB());
-            handleDragging(mouseX);
+            float svX = x + 5;
+            float svY = y + baseHeight + 5;
+            float svW = width - 10;
+            float svH = 40;
+            drawSVBox(context, svX, svY, svW, svH);
+
+            float hueX = x + 5;
+            float hueY = y + baseHeight + 50;
+            float hueW = width - 10;
+            float hueH = 10;
+            drawHueSlider(context, hueX, hueY, hueW, hueH);
+
+            float alphaX = x + 5;
+            float alphaY = y + baseHeight + 65;
+            float alphaW = width - 10;
+            float alphaH = 10;
+            drawAlphaSlider(context, alphaX, alphaY, alphaW, alphaH);
+            
+            if (draggingMode != 0) { // Keep updating if drag goes outside box
+                handleDragging(mouseX, mouseY);
+            }
         }
     }
 
-    private void renderSlider(DrawContext context, int mouseX, int mouseY, String label, int value, int id, float sliderY, int color) {
-        boolean isLight = ModuleManager.ui.clickGuiColor.getValue() == 0;
-        int textColor = isLight ? 0xFF000000 : 0xFFFFFFFF;
-        
-        context.drawText(mc.textRenderer, label, (int)(x + 5), (int)sliderY, textColor, false);
-        
-        float sliderStartX = x + 20;
-        float sliderEndX = x + width - 5;
-        float sliderWidth = sliderEndX - sliderStartX;
-        
-        context.fill((int) sliderStartX, (int)sliderY + 4, (int) sliderEndX, (int)sliderY + 6, new Color(180, 180, 180).getRGB());
-        
-        float pos = ((float)value / 255f) * sliderWidth;
-        context.fill((int) sliderStartX, (int)sliderY + 4, (int) (sliderStartX + pos), (int)sliderY + 6, color);
-        context.fill((int) (sliderStartX + pos - 2), (int)sliderY + 2, (int) (sliderStartX + pos + 2), (int)sliderY + 8, color);
+    private void drawSVBox(DrawContext context, float sx, float sy, float sw, float sh) {
+        int res = 4;
+        for (float i = 0; i < sw; i += res) {
+            for (float j = 0; j < sh; j += res) {
+                float s = i / sw;
+                float v = 1.0f - (j / sh);
+                int c = Color.HSBtoRGB(hue, s, v);
+                int endX = (int)Math.min(sx + i + res, sx + sw);
+                int endY = (int)Math.min(sy + j + res, sy + sh);
+                context.fill((int)(sx + i), (int)(sy + j), endX, endY, c | 0xFF000000);
+            }
+        }
+        int indicatorX = (int)(sx + (saturation * sw));
+        int indicatorY = (int)(sy + ((1.0f - brightness) * sh));
+        context.fill(indicatorX - 1, indicatorY - 1, indicatorX + 2, indicatorY + 2, 0xFF000000);
+        context.fill(indicatorX, indicatorY, indicatorX + 1, indicatorY + 1, 0xFFFFFFFF);
     }
 
-    private void handleDragging(int mouseX) {
-        if (draggingSlider != -1) {
-            float sliderStartX = x + 20;
-            float sliderEndX = x + width - 5;
-            float sliderWidth = sliderEndX - sliderStartX;
-            
-            float pos = mouseX - sliderStartX;
-            pos = Math.max(0, Math.min(sliderWidth, pos));
-            int value = (int)((pos / sliderWidth) * 255f);
-            
-            if (draggingSlider == 0) setting.setRed(value);
-            else if (draggingSlider == 1) setting.setGreen(value);
-            else if (draggingSlider == 2) setting.setBlue(value);
-            else if (draggingSlider == 3) setting.setAlpha(value);
+    private void drawHueSlider(DrawContext context, float sx, float sy, float sw, float sh) {
+        int res = 2;
+        for (float i = 0; i < sw; i += res) {
+            float h = i / sw;
+            int c = Color.HSBtoRGB(h, 1.0f, 1.0f);
+            int endX = (int)Math.min(sx + i + res, sx + sw);
+            context.fill((int)(sx + i), (int)sy, endX, (int)(sy + sh), c | 0xFF000000);
+        }
+        int indicatorX = (int)(sx + (hue * sw));
+        context.fill(indicatorX - 1, (int)sy, indicatorX + 2, (int)(sy + sh), 0xFF000000);
+        context.fill(indicatorX, (int)sy, indicatorX + 1, (int)(sy + sh), 0xFFFFFFFF);
+    }
+
+    private void drawAlphaSlider(DrawContext context, float sx, float sy, float sw, float sh) {
+        int res = 2;
+        int rgb = new Color(Color.HSBtoRGB(hue, saturation, brightness)).getRGB();
+        int rgbClean = rgb & 0xFFFFFF; // remove alpha
+        for (float i = 0; i < sw; i += res) {
+            float a = i / sw;
+            boolean dark = ((int)(i / 5) % 2 == 0);
+            int bgC = dark ? 0xFF888888 : 0xFFDDDDDD;
+            int c = ((int)(a * 255) << 24) | rgbClean;
+            int endX = (int)Math.min(sx + i + res, sx + sw);
+            context.fill((int)(sx + i), (int)sy, endX, (int)(sy + sh), bgC);
+            // We have to split alpha rendering over the checkerboard background
+            // Actually, context.fill might not blend alpha properly unless enabled, but let us try.
+            context.fill((int)(sx + i), (int)sy, endX, (int)(sy + sh), c);
+        }
+        int indicatorX = (int)(sx + (setting.getAlpha() / 255.0f * sw));
+        context.fill(indicatorX - 1, (int)sy, indicatorX + 2, (int)(sy + sh), 0xFF000000);
+        context.fill(indicatorX, (int)sy, indicatorX + 1, (int)(sy + sh), 0xFFFFFFFF);
+    }
+
+    private void applyHSB() {
+        Color rgb = new Color(Color.HSBtoRGB(hue, saturation, brightness));
+        setting.setColor(new Color(rgb.getRed(), rgb.getGreen(), rgb.getBlue(), setting.getAlpha()));
+    }
+
+    private void handleDragging(double mouseX, double mouseY) {
+        float svX = x + 5;
+        float svY = y + super.getHeight() + 5;
+        float svW = width - 10;
+        float svH = 40;
+
+        float hueX = x + 5;
+        float hueY = y + super.getHeight() + 50;
+        float hueW = width - 10;
+        float hueH = 10;
+
+        float alphaX = x + 5;
+        float alphaY = y + super.getHeight() + 65;
+        float alphaW = width - 10;
+        float alphaH = 10;
+
+        if (draggingMode == 1) { 
+            float s = (float) (mouseX - svX) / svW;
+            float v = 1.0f - ((float) (mouseY - svY) / svH);
+            saturation = Math.max(0f, Math.min(1f, s));
+            brightness = Math.max(0f, Math.min(1f, v));
+            applyHSB();
+        } else if (draggingMode == 2) { 
+            float h = (float) (mouseX - hueX) / hueW;
+            hue = Math.max(0f, Math.min(1f, h));
+            applyHSB();
+        } else if (draggingMode == 3) { 
+            float a = (float) (mouseX - alphaX) / alphaW;
+            float alphaF = Math.max(0f, Math.min(1f, a));
+            setting.setAlpha((int)(alphaF * 255));
         }
     }
 
@@ -97,21 +191,26 @@ public class ColorComponent extends Component {
         
         float baseHeight = super.getHeight();
         if (mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + baseHeight) {
-            if (button == 1) { // Right click to expand/collapse
+            if (button == 1) { 
                 setting.setExpanded(!setting.isExpanded());
                 return;
             }
         }
         
         if (setting.isExpanded() && button == 0) {
-            float sliderY = y + baseHeight + 2;
-            for (int i = 0; i < 4; i++) {
-                float curY = sliderY + (i * 11);
-                if (mouseY >= curY && mouseY <= curY + 10 && mouseX >= x + 20 && mouseX <= x + width - 5) {
-                    draggingSlider = i;
-                    handleDragging((int)mouseX);
-                    return;
-                }
+            float svX = x + 5, svY = y + baseHeight + 5, svW = width - 10, svH = 40;
+            float hueX = x + 5, hueY = y + baseHeight + 50, hueW = width - 10, hueH = 10;
+            float alphaX = x + 5, alphaY = y + baseHeight + 65, alphaW = width - 10, alphaH = 10;
+
+            if (mouseX >= svX && mouseX <= svX + svW && mouseY >= svY && mouseY <= svY + svH) {
+                draggingMode = 1;
+                handleDragging(mouseX, mouseY);
+            } else if (mouseX >= hueX && mouseX <= hueX + hueW && mouseY >= hueY && mouseY <= hueY + hueH) {
+                draggingMode = 2;
+                handleDragging(mouseX, mouseY);
+            } else if (mouseX >= alphaX && mouseX <= alphaX + alphaW && mouseY >= alphaY && mouseY <= alphaY + alphaH) {
+                draggingMode = 3;
+                handleDragging(mouseX, mouseY);
             }
         }
     }
@@ -122,15 +221,14 @@ public class ColorComponent extends Component {
     }
 
     public void mouseReleased(double mouseX, double mouseY, int button) {
-        if (draggingSlider != -1 && button == 0) {
-            draggingSlider = -1;
+        if (button == 0) {
+            draggingMode = 0;
         }
     }
     
     public void mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
-        if (draggingSlider != -1 && button == 0) {
-            handleDragging((int)mouseX);
+        if (button == 0 && draggingMode != 0) {
+            handleDragging(mouseX, mouseY);
         }
     }
-
 }
