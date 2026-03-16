@@ -19,6 +19,9 @@ import com.revampes.Fault.modules.impl.movement.Sprint;
 import com.revampes.Fault.modules.impl.other.*;
 import com.revampes.Fault.modules.impl.render.*;
 import com.revampes.Fault.modules.impl.dungeon.*;
+import com.revampes.Fault.modules.impl.kuudra.SupplyHelper;
+import com.revampes.Fault.modules.impl.kuudra.Priority;
+import com.revampes.Fault.modules.impl.kuudra.Pearl;
 import com.revampes.Fault.modules.impl.render.blockanimation.BlockAnimation;
 import com.revampes.Fault.settings.Setting;
 
@@ -88,6 +91,9 @@ public class ModuleManager {
     public static SecretClick secretClick;
     public static LividESP lividESP;
     public static MobHighlight mobHighlight;
+    public static SupplyHelper supplyHelper;
+    public static Priority priority;
+    public static Pearl pearl;
 
     public void register() {
         this.addModule(tps = new TPS());
@@ -148,6 +154,9 @@ public class ModuleManager {
         this.addModule(secretClick = new SecretClick());
         this.addModule(lividESP = new LividESP());
         this.addModule(mobHighlight = new MobHighlight());
+        this.addModule(supplyHelper = new SupplyHelper());
+        this.addModule(priority = new Priority());
+        this.addModule(pearl = new Pearl());
         modules.sort(Comparator.comparing(Module::getName));
     }
 

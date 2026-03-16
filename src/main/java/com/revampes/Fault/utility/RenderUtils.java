@@ -239,4 +239,42 @@ public class RenderUtils {
         drawBlockFilled(stack, pos, color, fillAlpha);
         drawBlockOutline(stack, pos, color, lineWidth);
     }
+
+    public static void drawCustomBeacon(MatrixStack stack, String text, BlockPos pos, Color color) {
+        drawBox(stack, pos, color, 2.0);
+        drawBoxFilled(stack, pos, new Color(color.getRed(), color.getGreen(), color.getBlue(), 100));
+        
+        // Draw a tall beacon beam
+        Box beamBox = new Box(pos.getX() + 0.3, pos.getY(), pos.getZ() + 0.3, 
+                              pos.getX() + 0.7, pos.getY() + 300, pos.getZ() + 0.7);
+        drawBoxFilled(stack, beamBox, new Color(color.getRed(), color.getGreen(), color.getBlue(), 50));
+        
+        // Ensure text renders slightly above the pos
+        draw3DText(stack, text, new Vec3d(pos.getX() + 0.5, pos.getY() + 1.5, pos.getZ() + 0.5), 1.0f);
+    }
+
+    public static void draw3DText(MatrixStack stack, String text, Vec3d pos, float scale) {
+        Camera camera = mc.getEntityRenderDispatcher().camera;
+        if (camera == null) return;
+        
+        double x = pos.x - camera.getPos().x;
+        double y = pos.y - camera.getPos().y;
+        double z = pos.z - camera.getPos().z;
+
+        stack.push();
+        stack.translate(x, y, z);
+        stack.multiply(camera.getRotation());
+        stack.scale(-0.025f * scale, -0.025f * scale, 0.025f * scale);
+
+        Matrix4f positionMatrix = stack.peek().getPositionMatrix();
+        TextRenderer textRenderer = mc.textRenderer;
+        
+        float textWidth = (float) (-textRenderer.getWidth(text) / 2);
+        VertexConsumerProvider.Immediate immediate = mc.getBufferBuilders().getEntityVertexConsumers();
+        
+        textRenderer.draw(text, textWidth, 0f, 0xFFFFFFFF, false, positionMatrix, immediate, TextRenderer.TextLayerType.NORMAL, 0x40000000, 0xF000F0);
+        
+        // No immediate.draw() needed as it will be drawn automatically or can be forced, but usually getEntityVertexConsumers works without manual draw here for tags
+        stack.pop();
+    }
 }

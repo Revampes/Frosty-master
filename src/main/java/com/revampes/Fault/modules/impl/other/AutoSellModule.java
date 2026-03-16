@@ -1,21 +1,22 @@
 package com.revampes.Fault.modules.impl.other;
 
+import java.awt.Color;
+import java.util.Arrays;
+import java.util.List;
+
+import com.revampes.Fault.events.impl.PreUpdateEvent;
 import com.revampes.Fault.modules.Module;
 import com.revampes.Fault.settings.impl.ButtonSetting;
 import com.revampes.Fault.settings.impl.SelectSetting;
 import com.revampes.Fault.settings.impl.SliderSetting;
-import com.revampes.Fault.events.impl.PreUpdateEvent;
+
 import meteordevelopment.orbit.EventHandler;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.item.ItemStack;
 import net.minecraft.screen.slot.Slot;
 import net.minecraft.screen.slot.SlotActionType;
-import net.minecraft.client.gui.DrawContext;
-
-import java.awt.Color;
-import java.util.Arrays;
-import java.util.List;
 
 public class AutoSellModule extends Module {
     
@@ -30,7 +31,7 @@ public class AutoSellModule extends Module {
             "machine gun", "sniper bow", "soulstealer bow", "silent death", "training weight",
             "beating heart", "premium flesh", "mimic fragment", "enchanted rotten flesh", "sign",
             "enchanted bone", "defuse kit", "optical lens", "tripwire hook", "button", "carpet", "lever", "diamond atom",
-            "healing viii splash potion", "healing 8 splash potion", "candycomb", "rune"
+            "healing viii splash potion", "healing 8 splash potion", "candycomb", "rune", "flaming chestplate", "bouncy"
     );
 
     private int tickCounter = 0;

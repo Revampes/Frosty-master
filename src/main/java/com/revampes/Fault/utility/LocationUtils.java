@@ -44,29 +44,33 @@ public class LocationUtils {
     public static String getCurrentArea() {
         if (mc.getNetworkHandler() == null) return "Unknown";
 
-        // Check fake players in tab list FIRST
-        Collection<PlayerListEntry> playerList = mc.getNetworkHandler().getPlayerList();
-        
-        for (PlayerListEntry entry : playerList) {
-            String tabName = "";
+        try {
+            // Check fake players in tab list FIRST
+            Collection<PlayerListEntry> playerList = mc.getNetworkHandler().getPlayerList();
+            
+            for (PlayerListEntry entry : playerList) {
+                String tabName = "";
 
-            if (entry.getDisplayName() != null) {
-                tabName = entry.getDisplayName().getString();
-            } else if (entry.getProfile() != null && entry.getProfile().name() != null) {
-                tabName = entry.getProfile().name();
-            }
+                if (entry.getDisplayName() != null) {
+                    tabName = entry.getDisplayName().getString();
+                } else if (entry.getProfile() != null && entry.getProfile().name() != null) {
+                    tabName = entry.getProfile().name();
+                }
 
-            if (tabName != null) {
-                tabName = tabName.replaceAll("(?i)\\\\u00A7[0-9A-FK-OR]", "");
-                
-                if (tabName.contains("Area: ")) {
-                    try {
-                        return tabName.split("Area: ")[1].split("\n")[0].trim();
-                    } catch (Exception e) {
-                        return "Unknown";
+                if (tabName != null) {
+                    tabName = tabName.replaceAll("(?i)\\\\u00A7[0-9A-FK-OR]", "");
+                    
+                    if (tabName.contains("Area: ")) {
+                        try {
+                            return tabName.split("Area: ")[1].split("\n")[0].trim();
+                        } catch (Exception e) {
+                            return "Unknown";
+                        }
                     }
                 }
             }
+        } catch (java.util.ConcurrentModificationException ignored) {
+            // Failsafe for thread-safety issues when requested by async thread event calls
         }
 
         // Fallback to cached header/footer

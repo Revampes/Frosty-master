@@ -21,6 +21,7 @@ import com.revampes.Fault.modules.ModuleManager;
 import com.revampes.Fault.utility.Rotations;
 import com.revampes.Fault.utility.Utils;
 import com.revampes.Fault.utility.LocationUtils;
+import com.revampes.Fault.utility.KuudraUtils;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -85,6 +86,7 @@ public class Revampes implements ModInitializer {
 		EVENT_BUS.subscribe(this);
 		EVENT_BUS.subscribe(new Rotations());
 		LocationUtils.init();
+		KuudraUtils.init();
 
 		ClientReceiveMessageEvents.GAME.register(SimpleChatEventHandler.INSTANCE);
 		ClientReceiveMessageEvents.GAME.register(SimpleChatEventHandler.INSTANCE);
