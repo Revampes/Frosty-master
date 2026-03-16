@@ -86,6 +86,7 @@ public class ModuleManager {
     public static PanelCommand panelCommand;
     public static AutoSellModule AutoSellModule;
     public static SecretClick secretClick;
+    public static LividESP lividESP;
     public static MobHighlight mobHighlight;
 
     public void register() {
@@ -145,6 +146,7 @@ public class ModuleManager {
         this.addModule(panelCommand = new com.revampes.Fault.modules.impl.other.PanelCommand());
         this.addModule(AutoSellModule = new AutoSellModule());
         this.addModule(secretClick = new SecretClick());
+        this.addModule(lividESP = new LividESP());
         this.addModule(mobHighlight = new MobHighlight());
         modules.sort(Comparator.comparing(Module::getName));
     }

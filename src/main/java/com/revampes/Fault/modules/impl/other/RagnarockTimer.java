@@ -39,7 +39,7 @@ public class RagnarockTimer extends Module implements SimpleChatEventHandler.Ove
     public void onReceiveOverlay(String message) {
         if (!Utils.nullCheck()) return;
 
-        String unformatted = Utils.stripColor(message).trim();
+        String unformatted = Utils.stripColor(message).trim().toUpperCase();
 
         long current = Util.getMeasuringTimeMs();
 

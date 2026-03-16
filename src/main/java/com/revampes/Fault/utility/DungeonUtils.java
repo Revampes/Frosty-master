@@ -79,6 +79,11 @@ public class DungeonUtils {
         return currentFloor != null && currentFloor.equalsIgnoreCase(floor);
     }
 
+    public static boolean isMasterMode() {
+        String floorStr = getDungeonFloor();
+        return floorStr != null && floorStr.toLowerCase().startsWith("m");
+    }
+
     public static boolean inBoss() {
         if (mc.player == null) return false;
 

@@ -27,6 +27,11 @@ public abstract class EntityRenderManagerMixin {
     private <S extends EntityRenderState> void render(S renderState, CameraRenderState cameraRenderState, double d, double e, double f, MatrixStack matrixStack, OrderedRenderCommandQueue orderedRenderCommandQueue, CallbackInfo info) {
         var entity = ((IEntityRenderState) renderState).revampes$getEntity();
 
+        if (com.revampes.Fault.modules.impl.dungeon.LividESP.isWrongLividConfigured(entity)) {
+            info.cancel();
+            return;
+        }
+
         if (entity instanceof EntityUtils player && player.hideWhenInsideCamera) {
             int cX = MathHelper.floor(this.camera.getCameraPos().x);
             int cY = MathHelper.floor(this.camera.getCameraPos().y);
