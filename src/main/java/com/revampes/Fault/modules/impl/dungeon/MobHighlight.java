@@ -1,5 +1,9 @@
 package com.revampes.Fault.modules.impl.dungeon;
 
+import java.awt.Color;
+import java.util.ArrayList;
+import java.util.List;
+
 import com.revampes.Fault.events.impl.Render3DEvent;
 import com.revampes.Fault.modules.Module;
 import com.revampes.Fault.settings.impl.ButtonSetting;
@@ -7,6 +11,7 @@ import com.revampes.Fault.settings.impl.SelectSetting;
 import com.revampes.Fault.settings.impl.SliderSetting;
 import com.revampes.Fault.utility.DungeonUtils;
 import com.revampes.Fault.utility.RenderUtils;
+
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
@@ -21,10 +26,6 @@ import net.minecraft.item.Items;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.Box;
 
-import java.awt.Color;
-import java.util.ArrayList;
-import java.util.List;
-
 public class MobHighlight extends Module {
 
     public enum MobType {
@@ -34,6 +35,12 @@ public class MobHighlight extends Module {
     private static final int LEATHER_BOOTS_ID = Item.getRawId(Items.LEATHER_BOOTS);
 
     private final ButtonSetting dontShowInvisibleMobs = new ButtonSetting("Hide Invisible", true);
+    private final ButtonSetting highlightFel = new ButtonSetting("Highlight Fel", true);
+    private final ButtonSetting highlightMimic = new ButtonSetting("Highlight Mimic", true);
+    private final ButtonSetting highlightMidas = new ButtonSetting("Highlight King Midas", true);
+    private final ButtonSetting highlightMiniBoss = new ButtonSetting("Highlight Miniboss", true);
+    private final ButtonSetting highlightTankMob = new ButtonSetting("Highlight TankMob", true);
+    private final ButtonSetting highlightStarMob = new ButtonSetting("Highlight StarMob", true);
     private final SelectSetting currentHighlight = new SelectSetting("Highlight Type", 0, new String[]{"Both", "Filled", "Outline"});
     private final SliderSetting outlineWidth = new SliderSetting("Outline Width", 4, 1, 10, 0.5);
 
@@ -47,6 +54,12 @@ public class MobHighlight extends Module {
     public MobHighlight() {
         super("MobHighlight", category.Dungeon);
         this.registerSetting(dontShowInvisibleMobs);
+        this.registerSetting(highlightFel);
+        this.registerSetting(highlightMimic);
+        this.registerSetting(highlightMidas);
+        this.registerSetting(highlightMiniBoss);
+        this.registerSetting(highlightTankMob);
+        this.registerSetting(highlightStarMob);
         this.registerSetting(currentHighlight);
         this.registerSetting(outlineWidth);
     }
@@ -108,13 +121,15 @@ public class MobHighlight extends Module {
         if (text == null) return null;
         String name = text.getString();
         
-        if (name.contains("King Midas")) return MobType.MINI;
-        if (name.contains("Mimic")) return MobType.MIMIC;
-        if (!DungeonUtils.isStarMob(armorStand)) return null;
-        if (name.contains("Fel")) return MobType.FEL;
-        if (isMiniBoss(name)) return MobType.MINI;
-        if (isTankMob(name)) return MobType.TANK;
-        return MobType.STAR;
+        if (name.contains("King Midas") && highlightMidas.isToggled()) return MobType.MINI;
+        if (name.contains("Mimic") && highlightMimic.isToggled()) return MobType.MIMIC;
+        if (name.contains("Fel") && highlightFel.isToggled()) return MobType.FEL;
+        if (isMiniBoss(name) && highlightMiniBoss.isToggled()) return MobType.MINI;
+        if (isTankMob(name) && highlightTankMob.isToggled()) return MobType.TANK;
+
+        if (DungeonUtils.isStarMob(armorStand) && highlightStarMob.isToggled()) return MobType.STAR;
+        
+        return null;
     }
 
     private int getIdOffset(ArmorStandEntity armorStand) {
@@ -144,7 +159,7 @@ public class MobHighlight extends Module {
         
         Text text = heldItem.getCustomName();
         if (text == null) return false;
-        if (!text.getString().equals("Silent Death")) return false;
+        if (!text.getString().contains("Silent Death")) return false;
 
         return Item.getRawId(boots.getItem()) == LEATHER_BOOTS_ID;
     }

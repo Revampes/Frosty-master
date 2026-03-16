@@ -1,11 +1,6 @@
 package com.revampes.Fault.utility;
 
 
-import java.awt.Color;
-
-import org.joml.Matrix4f;
-
-import com.mojang.blaze3d.vertex.VertexFormat;
 import static com.revampes.Fault.Revampes.mc;
 import com.revampes.Fault.modules.impl.dungeon.SecretClick;
 
@@ -14,13 +9,6 @@ import net.minecraft.block.Blocks;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.block.entity.SkullBlockEntity;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.Tessellator;
-import net.minecraft.client.render.VertexFormats;
-import net.minecraft.client.render.VertexRendering;
 
 public class DungeonUtils {
     
@@ -36,20 +24,11 @@ public class DungeonUtils {
         net.minecraft.text.Text text = armorStand.getCustomName();
         if (text == null) return false;
         
-        for (net.minecraft.text.Text sib : text.getSiblings()) {
-            net.minecraft.text.TextColor color = sib.getStyle().getColor();
-            if (color == null) continue;
+        String name = text.getString();
+        return name.contains("\u272A") || name.contains("\u2728") || name.contains("✯") || name.contains("✪");
 
-            if (color.getRgb() == 0xFFAA00 && sib.getString().equals("\u272A ")) {
-                return true;
-            }
-        }
-        return false;
     }
-
-    /**
-     * Checks if the block at the given position is a Secret (Chests, Levers, Wither/Redstone heads).
-     */
+    
     public static boolean isSecret(BlockPos pos) {
         Block block = mc.world.getBlockState(pos).getBlock();
 
