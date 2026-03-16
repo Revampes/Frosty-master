@@ -85,6 +85,7 @@ public class ModuleManager {
     public static com.revampes.AfterTimeFault.modules.impl.other.LifeSaverTimer lifeSaverTimer;
     public static com.revampes.AfterTimeFault.modules.impl.other.PanelCommand panelCommand;
     public static SecretClick secretClick;
+    public static MobHighlight mobHighlight;
 
     public void register() {
         this.addModule(tps = new TPS());
@@ -142,6 +143,7 @@ public class ModuleManager {
         this.addModule(lifeSaverTimer = new com.revampes.AfterTimeFault.modules.impl.other.LifeSaverTimer());
         this.addModule(panelCommand = new com.revampes.AfterTimeFault.modules.impl.other.PanelCommand());
         this.addModule(secretClick = new SecretClick());
+        this.addModule(mobHighlight = new MobHighlight());
         modules.sort(Comparator.comparing(Module::getName));
     }
 

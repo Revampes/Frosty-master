@@ -1,5 +1,11 @@
 package com.revampes.AfterTimeFault.modules.impl.dungeon;
 
+import java.awt.Color;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 import com.revampes.AfterTimeFault.events.impl.ReceivePacketEvent;
 import com.revampes.AfterTimeFault.events.impl.Render3DEvent;
 import com.revampes.AfterTimeFault.events.impl.SendPacketEvent;
@@ -9,13 +15,12 @@ import com.revampes.AfterTimeFault.settings.impl.SelectSetting;
 import com.revampes.AfterTimeFault.settings.impl.SliderSetting;
 import com.revampes.AfterTimeFault.utility.DungeonUtils;
 import com.revampes.AfterTimeFault.utility.RenderUtils;
+
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.block.Block;
-import net.minecraft.block.Blocks;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.Entity;
-import net.minecraft.entity.passive.BatEntity;
 import net.minecraft.entity.ItemEntity;
+import net.minecraft.entity.passive.BatEntity;
 import net.minecraft.network.packet.c2s.play.PlayerInteractBlockC2SPacket;
 import net.minecraft.network.packet.s2c.play.EntityStatusS2CPacket;
 import net.minecraft.network.packet.s2c.play.ItemPickupAnimationS2CPacket;
@@ -23,16 +28,6 @@ import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.SkullBlockEntity;
-import com.mojang.authlib.properties.Property;
-
-import java.awt.Color;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Arrays;
-import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
 
 public class SecretClick extends Module {
 
@@ -93,7 +88,7 @@ public class SecretClick extends Module {
                 // Moved check inside execute() to prevent CME reading tab list off-thread
                 if (!DungeonUtils.isInDungeon()) return;
                 
-                if (isSecret(pos)) {
+                if (DungeonUtils.isSecret(pos)) {
                     if (!clickedBlocks.containsKey(pos)) {
                         playChime();
                     }
@@ -187,29 +182,5 @@ public class SecretClick extends Module {
             Box box = new Box(pos.x - 0.25, pos.y - 0.25, pos.z - 0.25, pos.x + 0.25, pos.y + 0.25, pos.z + 0.25);
             RenderUtils.drawHighlight(event.getMatrix(), box, fillColor, outlineColor, throughWalls.isEnabled, renderMode.getOption());
         }
-    }
-
-    /**
-     * Checks if the block at the given position is a Secret (Chests, Levers, Wither/Redstone heads).
-     */
-    private boolean isSecret(BlockPos pos) {
-        Block block = mc.world.getBlockState(pos).getBlock();
-
-        // Check for common redstone/chest secrets
-        if (block == Blocks.CHEST || block == Blocks.TRAPPED_CHEST || block == Blocks.LEVER) {
-            return true;
-        }
-
-        // Check for specific player heads (Wither Essence / Redstone Key)
-        if (block == Blocks.PLAYER_HEAD || block == Blocks.PLAYER_WALL_HEAD) {
-            BlockEntity blockEntity = mc.world.getBlockEntity(pos);
-            if (blockEntity instanceof SkullBlockEntity skull) {
-                if (skull.getOwner() != null && skull.getOwner().getGameProfile() != null) {
-                    String uuid = skull.getOwner().getGameProfile().id().toString();
-                    return uuid.equals(WITHER_ESSENCE_ID) || uuid.equals(REDSTONE_KEY_ID);
-                }
-            }
-        }
-        return false;
     }
 }
