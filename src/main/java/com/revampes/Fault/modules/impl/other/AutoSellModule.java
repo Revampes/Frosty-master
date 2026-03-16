@@ -30,7 +30,7 @@ public class AutoSellModule extends Module {
             "machine gun", "sniper bow", "soulstealer bow", "silent death", "training weight",
             "beating heart", "premium flesh", "mimic fragment", "enchanted rotten flesh", "sign",
             "enchanted bone", "defuse kit", "optical lens", "tripwire hook", "button", "carpet", "lever", "diamond atom",
-            "healing viii splash potion", "healing 8 splash potion", "candycomb"
+            "healing viii splash potion", "healing 8 splash potion", "candycomb", "rune"
     );
 
     private int tickCounter = 0;
