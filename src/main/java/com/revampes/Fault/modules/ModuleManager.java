@@ -84,6 +84,7 @@ public class ModuleManager {
     public static AutoPetNotification autoPetNotification;
     public static com.revampes.Fault.modules.impl.other.LifeSaverTimer lifeSaverTimer;
     public static com.revampes.Fault.modules.impl.other.PanelCommand panelCommand;
+    public static AutoSellModule AutoSellModule;
     public static SecretClick secretClick;
     public static MobHighlight mobHighlight;
 
@@ -142,6 +143,7 @@ public class ModuleManager {
         this.addModule(ragnarockTimer = new RagnarockTimer());
         this.addModule(lifeSaverTimer = new com.revampes.Fault.modules.impl.other.LifeSaverTimer());
         this.addModule(panelCommand = new com.revampes.Fault.modules.impl.other.PanelCommand());
+        this.addModule(AutoSellModule = new AutoSellModule());
         this.addModule(secretClick = new SecretClick());
         this.addModule(mobHighlight = new MobHighlight());
         modules.sort(Comparator.comparing(Module::getName));
