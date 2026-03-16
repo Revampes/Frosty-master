@@ -53,6 +53,9 @@ public class ModuleComponent extends Component {
                 settingComponents.add(new InputComponent((com.revampes.Fault.settings.impl.InputSetting) setting,
                         x + 5, settingY, width - 10, height - 5));
                 settingY += height - 5 + 2;
+            } else if (setting instanceof com.revampes.Fault.settings.impl.ColorSetting colorSetting) {
+                settingComponents.add(new ColorComponent(colorSetting, x + 5, settingY, width - 10, height - 5));
+                settingY += height - 5 + 2;
             }
         }
     }
@@ -192,6 +195,8 @@ public class ModuleComponent extends Component {
             for (Component component : settingComponents) {
                 if (component instanceof SliderComponent) {
                     ((SliderComponent) component).mouseReleased(mouseX, mouseY, button);
+                } else if (component instanceof ColorComponent) {
+                    ((ColorComponent) component).mouseReleased(mouseX, mouseY, button);
                 }
             }
         }
@@ -202,6 +207,8 @@ public class ModuleComponent extends Component {
             for (Component component : settingComponents) {
                 if (component instanceof SliderComponent) {
                     ((SliderComponent) component).mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+                } else if (component instanceof ColorComponent) {
+                    ((ColorComponent) component).mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
                 }
             }
         }

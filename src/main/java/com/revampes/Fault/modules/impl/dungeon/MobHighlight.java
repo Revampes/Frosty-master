@@ -9,6 +9,7 @@ import com.revampes.Fault.modules.Module;
 import com.revampes.Fault.settings.impl.ButtonSetting;
 import com.revampes.Fault.settings.impl.SelectSetting;
 import com.revampes.Fault.settings.impl.SliderSetting;
+// import com.revampes.Fault.settings.impl.ColorSetting;
 import com.revampes.Fault.utility.DungeonUtils;
 import com.revampes.Fault.utility.RenderUtils;
 
@@ -44,12 +45,12 @@ public class MobHighlight extends Module {
     private final SelectSetting currentHighlight = new SelectSetting("Highlight Type", 0, new String[]{"Both", "Filled", "Outline"});
     private final SliderSetting outlineWidth = new SliderSetting("Outline Width", 4, 1, 10, 0.5);
 
-    private static final int starFilledColor = 0xff00ff00;
-    private static final int tankFilledColor = 0xffff0000;
-    private static final int miniFilledColor = 0xffffff00;
-    private static final int felFilledColor = 0xff00ffff;
-    private static final int assassinFilledColor = 0xff800080;
-    private static final int mimicFilledColor = 0xffffffff;
+    private final com.revampes.Fault.settings.impl.ColorSetting starColor = new com.revampes.Fault.settings.impl.ColorSetting("Star Color", new Color(0, 255, 0, 255));
+    private final com.revampes.Fault.settings.impl.ColorSetting tankColor = new com.revampes.Fault.settings.impl.ColorSetting("Tank Color", new Color(255, 0, 0, 255));
+    private final com.revampes.Fault.settings.impl.ColorSetting miniColor = new com.revampes.Fault.settings.impl.ColorSetting("Mini Color", new Color(255, 255, 0, 255));
+    private final com.revampes.Fault.settings.impl.ColorSetting felColor = new com.revampes.Fault.settings.impl.ColorSetting("Fel Color", new Color(0, 255, 255, 255));
+    private final com.revampes.Fault.settings.impl.ColorSetting assassinColor = new com.revampes.Fault.settings.impl.ColorSetting("Assassin Color", new Color(128, 0, 128, 255));
+    private final com.revampes.Fault.settings.impl.ColorSetting mimicColor = new com.revampes.Fault.settings.impl.ColorSetting("Mimic Color", new Color(255, 255, 255, 255));
 
     public MobHighlight() {
         super("MobHighlight", category.Dungeon);
@@ -62,6 +63,12 @@ public class MobHighlight extends Module {
         this.registerSetting(highlightStarMob);
         this.registerSetting(currentHighlight);
         this.registerSetting(outlineWidth);
+        this.registerSetting(starColor);
+        this.registerSetting(tankColor);
+        this.registerSetting(miniColor);
+        this.registerSetting(felColor);
+        this.registerSetting(assassinColor);
+        this.registerSetting(mimicColor);
     }
 
     @EventHandler
@@ -166,12 +173,12 @@ public class MobHighlight extends Module {
 
     private int getFilledColor(MobType mob) {
         return switch (mob) {
-            case STAR -> starFilledColor;
-            case TANK -> tankFilledColor;
-            case MINI -> miniFilledColor;
-            case FEL -> felFilledColor;
-            case ASSASSIN -> assassinFilledColor;
-            case MIMIC -> mimicFilledColor;
+            case STAR -> starColor.getRGB();
+            case TANK -> tankColor.getRGB();
+            case MINI -> miniColor.getRGB();
+            case FEL -> felColor.getRGB();
+            case ASSASSIN -> assassinColor.getRGB();
+            case MIMIC -> mimicColor.getRGB();
         };
     }
 

@@ -123,6 +123,12 @@ public class ClickGui extends Screen {
         context.fill((int) (x / scale), (int) (y / scale), (int) ((x + width) / scale), (int) ((y + 20) / scale), isLight ? new Color(100, 100, 255).getRGB() : new Color(60, 60, 180).getRGB());
         context.drawCenteredTextWithShadow(mc.textRenderer, "Revampes 1.0.0", (int) ((x + width / 2) / scale), (int) ((y + 6) / scale), Color.WHITE.getRGB());
 
+        int editBtnX = (int) (x + width - 60);
+        int editBtnY = (int) y + 2;
+        boolean editHovered = mouseX >= editBtnX && mouseX <= editBtnX + 55 && mouseY >= editBtnY && mouseY <= editBtnY + 16;
+        context.fill((int)(editBtnX / scale), (int)(editBtnY / scale), (int)((editBtnX + 55) / scale), (int)((editBtnY + 16) / scale), editHovered ? new Color(100, 100, 100, 150).getRGB() : new Color(50, 50, 50, 150).getRGB());
+        context.drawText(mc.textRenderer, "Edit HUD", (int)((editBtnX + 6) / scale), (int)((editBtnY + 4) / scale), Color.WHITE.getRGB(), true);
+
         context.fill((int) ((x + 5) / scale), (int) ((y + 25) / scale), (int) ((x + 65) / scale), (int) ((y + height - 5) / scale), isLight ? new Color(230, 230, 230).getRGB() : new Color(70, 70, 70).getRGB());
         context.fill((int) ((x + 75) / scale), (int) ((y + 25) / scale), (int) ((x + width - 5) / scale), (int) ((y + height - 5) / scale), isLight ?  new Color(240, 240, 240).getRGB() : new Color(60, 60, 60).getRGB());
 
@@ -236,6 +242,13 @@ public class ClickGui extends Screen {
         float scale = 1.0f;
         mouseX *= scale;
         mouseY *= scale;
+        
+        int editBtnX = (int) (x + width - 60);
+        int editBtnY = (int) y + 2;
+        if (mouseX >= editBtnX && mouseX <= editBtnX + 55 && mouseY >= editBtnY && mouseY <= editBtnY + 16 && button == 0) {
+            mc.setScreen(new com.revampes.Fault.gui.screen.HudEditorScreen());
+            return true;
+        }
 
         if (mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + 20) {
             dragging = true;
