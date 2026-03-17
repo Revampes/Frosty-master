@@ -22,6 +22,7 @@ import com.revampes.Fault.modules.impl.dungeon.*;
 import com.revampes.Fault.modules.impl.kuudra.SupplyHelper;
 import com.revampes.Fault.modules.impl.kuudra.Priority;
 import com.revampes.Fault.modules.impl.kuudra.Pearl;
+import com.revampes.Fault.modules.impl.kuudra.CrateAura;
 import com.revampes.Fault.modules.impl.render.blockanimation.BlockAnimation;
 import com.revampes.Fault.settings.Setting;
 
@@ -94,6 +95,7 @@ public class ModuleManager {
     public static SupplyHelper supplyHelper;
     public static Priority priority;
     public static Pearl pearl;
+    public static CrateAura crateAura;
 
     public void register() {
         this.addModule(tps = new TPS());
@@ -157,6 +159,7 @@ public class ModuleManager {
         this.addModule(supplyHelper = new SupplyHelper());
         this.addModule(priority = new Priority());
         this.addModule(pearl = new Pearl());
+        this.addModule(crateAura = new CrateAura());
         modules.sort(Comparator.comparing(Module::getName));
     }
 

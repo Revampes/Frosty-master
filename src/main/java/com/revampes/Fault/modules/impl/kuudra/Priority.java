@@ -1,18 +1,20 @@
 package com.revampes.Fault.modules.impl.kuudra;
 
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 import com.revampes.Fault.events.impl.ReceivePacketEvent;
 import com.revampes.Fault.modules.Module;
 import com.revampes.Fault.settings.impl.ButtonSetting;
 import com.revampes.Fault.utility.KuudraUtils;
 import com.revampes.Fault.utility.Utils;
+
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.entity.mob.GiantEntity;
 import net.minecraft.network.packet.Packet;
 import net.minecraft.network.packet.s2c.play.GameMessageS2CPacket;
+import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
-
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public class Priority extends Module {
 
@@ -86,7 +88,11 @@ public class Priority extends Module {
                 }
                 
                 if (!msg.isEmpty()) {
-                    if (mc.player != null) mc.player.networkHandler.sendChatCommand("pc " + msg);
+                    if (mc.player != null) {
+                        mc.player.networkHandler.sendChatCommand("pc " + msg);
+                        mc.inGameHud.setTitleTicks(10, 40, 10);
+                        mc.inGameHud.setTitle(Text.literal("§c" + msg));
+                    }
                 }
             } else {
                 Matcher matcher = PARTY_REGEX.matcher(text);

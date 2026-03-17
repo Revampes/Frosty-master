@@ -10,4 +10,10 @@ public interface InGameHudAccessor {
     static java.util.Comparator<net.minecraft.scoreboard.ScoreboardEntry> getScoreboardEntryComparator() {
         throw new AssertionError();
     }
+
+    @Accessor("title")
+    net.minecraft.text.Text getTitle();
+
+    @Accessor("titleRemainTicks")
+    int getTitleRemainTicks();
 }
