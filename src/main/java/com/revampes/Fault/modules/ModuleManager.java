@@ -53,6 +53,7 @@ import com.revampes.Fault.modules.impl.render.ChestESP;
 import com.revampes.Fault.modules.impl.render.FancyDamageSplashModule;
 import com.revampes.Fault.modules.impl.render.FreeLook;
 import com.revampes.Fault.modules.impl.render.Fullbright;
+import com.revampes.Fault.modules.impl.render.Etherwarp;
 import com.revampes.Fault.modules.impl.render.HUD;
 import com.revampes.Fault.modules.impl.render.InvisbugESP;
 import com.revampes.Fault.modules.impl.render.NickHider;
@@ -81,6 +82,7 @@ public class ModuleManager {
     public static Sprint sprint;
     public static AntiDebuff antiDebuff;
     public static Fullbright fullbright;
+    public static Etherwarp etherwarp;
     public static NoHurtCam noHurtCam;
     public static AutoFish autoFish;
     public static LushlilacNuker lushlilacNuker;
@@ -147,6 +149,7 @@ public class ModuleManager {
         this.addModule(velocity = new Velocity());
         this.addModule(antiDebuff = new AntiDebuff());
         this.addModule(fullbright = new Fullbright());
+        this.addModule(etherwarp = new Etherwarp());
         this.addModule(noHurtCam = new NoHurtCam());
         this.addModule(autoFish = new AutoFish());
         this.addModule(lushlilacNuker = new LushlilacNuker());
