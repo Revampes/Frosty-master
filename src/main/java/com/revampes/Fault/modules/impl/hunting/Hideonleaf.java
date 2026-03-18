@@ -17,6 +17,7 @@ import com.revampes.Fault.events.impl.Render3DEvent;
 import com.revampes.Fault.interfaces.ICameraOverriddenEntity;
 import com.revampes.Fault.modules.Module;
 import com.revampes.Fault.settings.impl.ButtonSetting;
+import com.revampes.Fault.settings.impl.ColorSetting;
 import com.revampes.Fault.settings.impl.SelectSetting;
 import com.revampes.Fault.settings.impl.SliderSetting;
 import com.revampes.Fault.utility.RenderUtils;
@@ -30,13 +31,17 @@ import java.util.List;
 
 public class Hideonleaf extends Module {
 
-    private ButtonSetting esp, hit, silent;
-    private SliderSetting offset, range;
+    private ButtonSetting esp, hit, silent, drawLine;
+    private SliderSetting offset, range, lineWidth;
+    private ColorSetting lineColor;
 
     public Hideonleaf() {
         super("Shulkers", category.Hunting);
 
         this.registerSetting(esp = new ButtonSetting("ESP", true));
+        this.registerSetting(drawLine = new ButtonSetting("Draw Line", true));
+        this.registerSetting(lineWidth = new SliderSetting("Line Width", 2, 1, 10, 0.5));
+        this.registerSetting(lineColor = new ColorSetting("Line Color", new Color(0, 255, 0, 204)));
         this.registerSetting(hit = new ButtonSetting("Attack", true));
         this.registerSetting(silent = new ButtonSetting("Silent", true));
         this.registerSetting(offset = new SliderSetting("Height offset", "x", 1.2, 0.8, 1.6, 0.1));
@@ -53,6 +58,9 @@ public class Hideonleaf extends Module {
         this.silent.setVisibilityCondition(() -> hit.isToggled());
         this.offset.setVisibilityCondition(() -> hit.isToggled());
         this.range.setVisibilityCondition(() -> hit.isToggled());
+        this.drawLine.setVisibilityCondition(() -> esp.isToggled());
+        this.lineWidth.setVisibilityCondition(() -> esp.isToggled() && drawLine.isToggled());
+        this.lineColor.setVisibilityCondition(() -> esp.isToggled() && drawLine.isToggled());
     }
 
 
@@ -70,7 +78,7 @@ public class Hideonleaf extends Module {
 
         for (Entity entity : mc.world.getEntities()) {
             if (entity instanceof ShulkerEntity && isInRange(entity) && isGreenShulker((ShulkerEntity) entity)) {
-                renderShulkerESP(event.getMatrix(), (ShulkerEntity) entity);
+                renderShulkerESP(event, (ShulkerEntity) entity);
             }
         }
     }
@@ -156,7 +164,12 @@ public class Hideonleaf extends Module {
         }
     }
 
-    private void renderShulkerESP(MatrixStack matrices, ShulkerEntity shulker) {
-        RenderUtils.outlineEntity(matrices, shulker, Color.GREEN, 1.0f);
+    private void renderShulkerESP(Render3DEvent event, ShulkerEntity shulker) {
+        RenderUtils.outlineEntity(event.getMatrix(), shulker, Color.GREEN, 1.0f);
+        if (drawLine.isToggled()) {
+            Vec3d crosshair = mc.player.getCameraPosVec(event.getDelta()).add(mc.player.getRotationVec(event.getDelta()).multiply(2.0));
+            Vec3d center = shulker.getBoundingBox().getCenter();
+            RenderUtils.drawLine(event.getMatrix(), crosshair, center, lineColor.getColor(), lineWidth.getInput());
+        }
     }
 }

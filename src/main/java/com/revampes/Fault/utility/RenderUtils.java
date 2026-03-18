@@ -191,6 +191,36 @@ public class RenderUtils {
         drawBox(stack, new Box(bp), c, lineWidth);
     }
 
+    public static void drawLine(MatrixStack stack, Vec3d start, Vec3d end, Color c, double lineWidth) {
+        float minX = (float) (start.x - mc.getEntityRenderDispatcher().camera.getPos().getX());
+        float minY = (float) (start.y - mc.getEntityRenderDispatcher().camera.getPos().getY());
+        float minZ = (float) (start.z - mc.getEntityRenderDispatcher().camera.getPos().getZ());
+        float maxX = (float) (end.x - mc.getEntityRenderDispatcher().camera.getPos().getX());
+        float maxY = (float) (end.y - mc.getEntityRenderDispatcher().camera.getPos().getY());
+        float maxZ = (float) (end.z - mc.getEntityRenderDispatcher().camera.getPos().getZ());
+
+        BufferBuilder bufferBuilder = Tessellator.getInstance()
+                .begin(VertexFormat.DrawMode.LINES, VertexFormats.POSITION_COLOR_NORMAL);
+
+        float dx = maxX - minX;
+        float dy = maxY - minY;
+        float dz = maxZ - minZ;
+        float dist = MathHelper.sqrt(dx * dx + dy * dy + dz * dz);
+        dx /= dist;
+        dy /= dist;
+        dz /= dist;
+
+        bufferBuilder.vertex(stack.peek().getPositionMatrix(), minX, minY, minZ)
+            .color(c.getRed() / 255f, c.getGreen() / 255f, c.getBlue() / 255f, c.getAlpha() / 255f)
+            .normal(stack.peek(), dx, dy, dz);
+
+        bufferBuilder.vertex(stack.peek().getPositionMatrix(), maxX, maxY, maxZ)
+            .color(c.getRed() / 255f, c.getGreen() / 255f, c.getBlue() / 255f, c.getAlpha() / 255f)
+            .normal(stack.peek(), dx, dy, dz);
+
+        Layers.getGlobalLines(lineWidth).draw(bufferBuilder.end());
+    }
+
     public static void drawHighlight(MatrixStack stack, Box box, Color fillColor, Color outlineColor, boolean throughWalls, String mode) {
         if (throughWalls) {
             org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_DEPTH_TEST);

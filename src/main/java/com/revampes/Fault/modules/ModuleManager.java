@@ -1,9 +1,20 @@
 package com.revampes.Fault.modules;
 
-import com.revampes.Fault.modules.impl.client.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+
+import com.revampes.Fault.modules.impl.client.Cape;
+import com.revampes.Fault.modules.impl.client.Commands;
+import com.revampes.Fault.modules.impl.client.Title;
+import com.revampes.Fault.modules.impl.client.UI;
 import com.revampes.Fault.modules.impl.combat.AutoClicker;
 import com.revampes.Fault.modules.impl.combat.KillAura;
 import com.revampes.Fault.modules.impl.combat.Velocity;
+import com.revampes.Fault.modules.impl.dungeon.KeyHighlight;
+import com.revampes.Fault.modules.impl.dungeon.LividESP;
+import com.revampes.Fault.modules.impl.dungeon.MobHighlight;
+import com.revampes.Fault.modules.impl.dungeon.SecretClick;
 import com.revampes.Fault.modules.impl.farming.GardenCleaner;
 import com.revampes.Fault.modules.impl.fishing.AutoFish;
 import com.revampes.Fault.modules.impl.foraging.LushlilacNuker;
@@ -11,26 +22,48 @@ import com.revampes.Fault.modules.impl.foraging.SeaLumiesNuker;
 import com.revampes.Fault.modules.impl.foraging.WoodNuker;
 import com.revampes.Fault.modules.impl.hunting.AutoReel;
 import com.revampes.Fault.modules.impl.hunting.Hideonleaf;
+import com.revampes.Fault.modules.impl.kuudra.BuildHelper;
+import com.revampes.Fault.modules.impl.kuudra.CrateAura;
+import com.revampes.Fault.modules.impl.kuudra.Pearl;
+import com.revampes.Fault.modules.impl.kuudra.Priority;
+import com.revampes.Fault.modules.impl.kuudra.RemovePerks;
+import com.revampes.Fault.modules.impl.kuudra.SupplyHelper;
 import com.revampes.Fault.modules.impl.mining.FrozenTreasure;
 import com.revampes.Fault.modules.impl.mining.NoBreakReset;
 import com.revampes.Fault.modules.impl.mining.SandNuker;
 import com.revampes.Fault.modules.impl.movement.GuiMove;
 import com.revampes.Fault.modules.impl.movement.Sprint;
-import com.revampes.Fault.modules.impl.other.*;
-import com.revampes.Fault.modules.impl.render.*;
-import com.revampes.Fault.modules.impl.dungeon.*;
-import com.revampes.Fault.modules.impl.kuudra.BuildHelper;
-import com.revampes.Fault.modules.impl.kuudra.RemovePerks;
-import com.revampes.Fault.modules.impl.kuudra.SupplyHelper;
-import com.revampes.Fault.modules.impl.kuudra.Priority;
-import com.revampes.Fault.modules.impl.kuudra.Pearl;
-import com.revampes.Fault.modules.impl.kuudra.CrateAura;
+import com.revampes.Fault.modules.impl.other.AntiBot;
+import com.revampes.Fault.modules.impl.other.AutoExperiment;
+import com.revampes.Fault.modules.impl.other.AutoPetNotification;
+import com.revampes.Fault.modules.impl.other.AutoReconnect;
+import com.revampes.Fault.modules.impl.other.AutoSellModule;
+import com.revampes.Fault.modules.impl.other.CarnivalHelper;
+import com.revampes.Fault.modules.impl.other.FastPlace;
+import com.revampes.Fault.modules.impl.other.GhostBlock;
+import com.revampes.Fault.modules.impl.other.LifeSaverTimer;
+import com.revampes.Fault.modules.impl.other.MoveFix;
+import com.revampes.Fault.modules.impl.other.NoPlaceInteract;
+import com.revampes.Fault.modules.impl.other.PanelCommand;
+import com.revampes.Fault.modules.impl.other.RagnarockTimer;
+import com.revampes.Fault.modules.impl.render.AntiDebuff;
+import com.revampes.Fault.modules.impl.render.ArmorHider;
+import com.revampes.Fault.modules.impl.render.AxolotlESP;
+import com.revampes.Fault.modules.impl.render.ChestESP;
+import com.revampes.Fault.modules.impl.render.FancyDamageSplashModule;
+import com.revampes.Fault.modules.impl.render.FreeLook;
+import com.revampes.Fault.modules.impl.render.Fullbright;
+import com.revampes.Fault.modules.impl.render.HUD;
+import com.revampes.Fault.modules.impl.render.InvisbugESP;
+import com.revampes.Fault.modules.impl.render.NickHider;
+import com.revampes.Fault.modules.impl.render.NoBlur;
+import com.revampes.Fault.modules.impl.render.NoHudElement;
+import com.revampes.Fault.modules.impl.render.NoHurtCam;
+import com.revampes.Fault.modules.impl.render.NoOverlay;
+import com.revampes.Fault.modules.impl.render.PlayerESP;
+import com.revampes.Fault.modules.impl.render.TPS;
 import com.revampes.Fault.modules.impl.render.blockanimation.BlockAnimation;
 import com.revampes.Fault.settings.Setting;
-
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
 
 public class ModuleManager {
     public static List<Module> modules = new ArrayList<>();
@@ -100,6 +133,7 @@ public class ModuleManager {
     public static Priority priority;
     public static Pearl pearl;
     public static CrateAura crateAura;
+    public static KeyHighlight keyHighlight;
 
     public void register() {
         this.addModule(tps = new TPS());
@@ -166,6 +200,7 @@ public class ModuleManager {
         this.addModule(priority = new Priority());
         this.addModule(pearl = new Pearl());
         this.addModule(crateAura = new CrateAura());
+        this.addModule(keyHighlight = new KeyHighlight());
         modules.sort(Comparator.comparing(Module::getName));
     }
 
