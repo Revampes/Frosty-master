@@ -10,6 +10,9 @@ import com.revampes.Fault.modules.ModuleManager;
 import com.revampes.Fault.modules.impl.other.PanelCommand;
 import com.revampes.Fault.settings.Setting;
 import com.revampes.Fault.settings.impl.*;
+import com.revampes.Fault.settings.impl.MapSetting;
+
+import java.awt.Color;
 
 import java.io.*;
 import java.nio.file.Files;
@@ -237,6 +240,10 @@ public class ConfigManager {
                         settingsObject.addProperty(setting.getName(), ((ButtonSetting) setting).isToggled());
                     } else if (setting instanceof InputSetting) {
                         settingsObject.addProperty(setting.getName(), ((InputSetting) setting).getValue());
+                    } else if (setting instanceof MapSetting) {
+                        settingsObject.add(setting.getName(), gson.toJsonTree(((MapSetting) setting).getValue()));
+                    } else if (setting instanceof ColorSetting) {
+                        settingsObject.addProperty(setting.getName(), ((ColorSetting) setting).getRGB());
                     }
                 }
 
@@ -304,6 +311,22 @@ public class ConfigManager {
                         ((ButtonSetting) setting).setEnabled(settingsObject.get(setting.getName()).getAsBoolean());
                     } else if (setting instanceof InputSetting) {
                         ((InputSetting) setting).setValue(settingsObject.get(setting.getName()).getAsString());
+                    } else if (setting instanceof MapSetting) {
+                        try {
+                            java.lang.reflect.Type type = new com.google.gson.reflect.TypeToken<java.util.Map<String, java.util.Map<Integer, Integer>>>() {}.getType();
+                            java.util.Map<String, java.util.Map<Integer, Integer>> map = gson.fromJson(settingsObject.get(setting.getName()), type);
+                            ((MapSetting) setting).setValue(map);
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                    } else if (setting instanceof ColorSetting) {
+                        try {
+                            int rgbValue = settingsObject.get(setting.getName()).getAsInt();
+                            Color color = new Color(rgbValue, true);
+                            ((ColorSetting) setting).setColor(color);
+                        } catch (Exception e) {
+                            System.err.println("Failed to load color setting " + setting.getName() + ": " + e.getMessage());
+                        }
                     }
                 }
             }

@@ -1,0 +1,10 @@
+
+--- src/main/java/com/revampes/Fault/modules/impl/other/SlotBinds.java
++++ src/main/java/com/revampes/Fault/modules/impl/other/SlotBinds.java
+@@ -176,6 +176,8 @@
+         Color c = lineColor.getColor();
+         com.revampes.Fault.utility.RenderUtils.draw2DLine(event.context, startX, startY, endX, endY, c.getRGB(), 2);
++
++        event.context.fill(event.mouseX, event.mouseY, event.mouseX + 20, event.mouseY + 20, 0xFFFF0000);
+     }
+ 

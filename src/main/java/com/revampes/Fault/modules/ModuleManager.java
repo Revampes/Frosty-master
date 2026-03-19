@@ -46,6 +46,7 @@ import com.revampes.Fault.modules.impl.other.MoveFix;
 import com.revampes.Fault.modules.impl.other.NoPlaceInteract;
 import com.revampes.Fault.modules.impl.other.PanelCommand;
 import com.revampes.Fault.modules.impl.other.RagnarockTimer;
+import com.revampes.Fault.modules.impl.other.SlotBinds;
 import com.revampes.Fault.modules.impl.render.AntiDebuff;
 import com.revampes.Fault.modules.impl.render.ArmorHider;
 import com.revampes.Fault.modules.impl.render.AxolotlESP;
@@ -136,6 +137,7 @@ public class ModuleManager {
     public static Pearl pearl;
     public static CrateAura crateAura;
     public static KeyHighlight keyHighlight;
+    public static SlotBinds slotBinds;
 
     public void register() {
         this.addModule(tps = new TPS());
@@ -204,6 +206,7 @@ public class ModuleManager {
         this.addModule(pearl = new Pearl());
         this.addModule(crateAura = new CrateAura());
         this.addModule(keyHighlight = new KeyHighlight());
+        this.addModule(slotBinds = new SlotBinds());
         modules.sort(Comparator.comparing(Module::getName));
     }
 

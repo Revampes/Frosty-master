@@ -90,7 +90,7 @@ public class Etherwarp extends Module {
         String id = Utils.getCustomDataIId(mainHandItem.getComponents().toString());
         if (id == null || id.isEmpty()) return;
         
-        boolean isEtherwarp = id.equals("ETHERWARP_CONDUIT") || id.equals("VOIDEDGE_KATANA") || id.equals("VORPAL_KATANA") || id.equals("ATOMSPLIT_KATANA") || id.equals("ASPECT_OF_THE_VOID");
+        boolean isEtherwarp = id.equals("ETHERWARP_CONDUIT") || id.equals("ASPECT_OF_THE_VOID");
         boolean isAote = id.equals("ASPECT_OF_THE_END");
 
         if (!isEtherwarp && !(isAote && mc.player.isSneaking())) {
@@ -143,7 +143,7 @@ public class Etherwarp extends Module {
             if (mainHandItem.isEmpty()) return;
 
             String id = Utils.getCustomDataIId(mainHandItem.getComponents().toString());
-            boolean isEtherwarp = id.equals("ETHERWARP_CONDUIT") || id.equals("VOIDEDGE_KATANA") || id.equals("VORPAL_KATANA") || id.equals("ATOMSPLIT_KATANA") || id.equals("ASPECT_OF_THE_VOID");
+            boolean isEtherwarp = id.equals("ETHERWARP_CONDUIT") || id.equals("ASPECT_OF_THE_VOID");
 
             if (isEtherwarp || (id.equals("ASPECT_OF_THE_END") && mc.player.isSneaking())) {
                 if (!mc.player.isSneaking() && !id.equals("ETHERWARP_CONDUIT")) return;

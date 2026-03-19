@@ -307,4 +307,28 @@ public class RenderUtils {
         // No immediate.draw() needed as it will be drawn automatically or can be forced, but usually getEntityVertexConsumers works without manual draw here for tags
         stack.pop();
     }
+
+    public static void draw2DLine(DrawContext context, float x1, float y1, float x2, float y2, int color, int thickness) {
+        if ((color >>> 24) == 0) {
+            color |= 0xFF000000;
+        }
+
+        float dx = x2 - x1;
+        float dy = y2 - y1;
+        int steps = Math.max(1, (int) Math.ceil(Math.max(Math.abs(dx), Math.abs(dy))));
+        float half = Math.max(2.0f, thickness) / 2.0f;
+
+        for (int i = 0; i <= steps; i++) {
+            float t = i / (float) steps;
+            float x = x1 + dx * t;
+            float y = y1 + dy * t;
+
+            int minX = Math.round(x - half);
+            int minY = Math.round(y - half);
+            int maxX = Math.round(x + half);
+            int maxY = Math.round(y + half);
+
+            context.fill(Pipelines.GLOBAL_QUADS_PIPELINE, minX, minY, maxX + 1, maxY + 1, color);
+        }
+    }
 }

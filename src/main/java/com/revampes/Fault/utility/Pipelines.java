@@ -9,8 +9,8 @@ import net.minecraft.client.render.VertexFormats;
 import static net.minecraft.client.gl.RenderPipelines.POSITION_COLOR_SNIPPET;
 import static net.minecraft.client.gl.RenderPipelines.RENDERTYPE_LINES_SNIPPET;
 
-class Pipelines {
-    static final RenderPipeline GLOBAL_QUADS_PIPELINE = RenderPipeline.builder(POSITION_COLOR_SNIPPET)
+public class Pipelines {
+    public static final RenderPipeline GLOBAL_QUADS_PIPELINE = RenderPipeline.builder(POSITION_COLOR_SNIPPET)
             .withLocation("pipeline/global_fill_pipeline")
             .withVertexFormat(VertexFormats.POSITION_COLOR, VertexFormat.DrawMode.QUADS)
             .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
@@ -19,7 +19,7 @@ class Pipelines {
             .withCull(false)
             .build();
 
-    static final RenderPipeline GLOBAL_LINES_PIPELINE = RenderPipeline.builder(RENDERTYPE_LINES_SNIPPET)
+    public static final RenderPipeline GLOBAL_LINES_PIPELINE = RenderPipeline.builder(RENDERTYPE_LINES_SNIPPET)
             .withLocation("pipeline/global_lines_pipeline")
             .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
             .withBlend(BlendFunction.TRANSLUCENT)

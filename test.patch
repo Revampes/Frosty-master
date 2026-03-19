@@ -1,0 +1,13 @@
+
+--- src/main/java/com/revampes/Fault/utility/RenderUtils.java
++++ src/main/java/com/revampes/Fault/utility/RenderUtils.java
+@@ -321,7 +321,7 @@
+         matrices.translate(x1, y1);
+         matrices.rotate(angle);
+ 
+-        context.fill(Pipelines.GLOBAL_QUADS_PIPELINE, 0, -thickness / 2, (int) length, thickness / 2, color);
++        context.fill(Pipelines.GLOBAL_LINES_PIPELINE, 0, -thickness / 2, (int) length, thickness / 2, color);
+ 
+         matrices.popMatrix();
+     }
+

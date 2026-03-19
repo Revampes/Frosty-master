@@ -1,0 +1,1 @@
+import net.minecraft.client.gui.DrawContext; import java.io.PrintWriter; public class C { public void f() throws Exception { PrintWriter w = new PrintWriter("methods.txt"); for(java.lang.reflect.Method m : DrawContext.class.getMethods()) w.println(m.getName() + " " + java.util.Arrays.toString(m.getParameterTypes())); w.close(); } }
