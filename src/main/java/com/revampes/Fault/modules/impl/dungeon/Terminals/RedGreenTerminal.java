@@ -15,9 +15,11 @@ import java.util.LinkedList;
 import java.util.Set;
 
 public class RedGreenTerminal extends AbstractTerminal {
+    private static final long QUEUE_RECHECK_DELAY_MS = 300L;
     private final Deque<int[]> queuedClicks = new LinkedList<>();
     private final Set<Integer> pendingClicks = new HashSet<>();
     private long lastQueuedSendAt = 0L;
+    private long queueBecameEmptyAt = 0L;
 
     @Override
     public String getTerminalName() {
@@ -40,6 +42,7 @@ public class RedGreenTerminal extends AbstractTerminal {
             queuedClicks.clear();
             pendingClicks.clear();
             lastQueuedSendAt = 0L;
+            queueBecameEmptyAt = 0L;
             windowSize = slotCount;
         }
     }
@@ -111,8 +114,19 @@ public class RedGreenTerminal extends AbstractTerminal {
         }
 
         Set<Integer> freshSolution = new HashSet<>(solutionSlots);
+        if (queuedClicks.isEmpty()) {
+            long now = System.currentTimeMillis();
+            if (queueBecameEmptyAt == 0L) {
+                queueBecameEmptyAt = now;
+            }
+            if (!shouldQueueClick() || now - queueBecameEmptyAt >= QUEUE_RECHECK_DELAY_MS) {
+                pendingClicks.clear();
+            }
+        } else {
+            queueBecameEmptyAt = 0L;
+            pendingClicks.retainAll(freshSolution);
+        }
         solutionSlots.removeAll(pendingClicks);
-        pendingClicks.retainAll(freshSolution);
     }
 
     @Override
@@ -124,6 +138,7 @@ public class RedGreenTerminal extends AbstractTerminal {
 
             if (shouldQueueClick()) {
                 queuedClicks.addLast(new int[]{slotIndex, normalizedButton});
+                queueBecameEmptyAt = 0L;
                 processQueuedClicks();
             } else {
                 sendClickPacket(slotIndex, normalizedButton);
@@ -156,7 +171,7 @@ public class RedGreenTerminal extends AbstractTerminal {
 
     @Override
     public void render(RenderScreenEvent event) {
-        if (!inTerminal || windowId == -1 || solutionSlots.isEmpty()) return;
+        if (!inTerminal || windowId == -1) return;
 
         int screenWidth = event.context.getScaledWindowWidth();
         int screenHeight = event.context.getScaledWindowHeight();
@@ -180,5 +195,10 @@ public class RedGreenTerminal extends AbstractTerminal {
         for (int slot : solutionSlots) {
             TerminalRenderUtils.drawSlotHighlight(event.context, slot, scale, offsetX, offsetY + titleHeight, 0xFFFF0000);
         }
+    }
+
+    @Override
+    public int getPendingQueueCount() {
+        return queuedClicks.size();
     }
 }

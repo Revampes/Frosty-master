@@ -4,10 +4,7 @@ import com.revampes.Fault.events.impl.RenderScreenEvent;
 import com.revampes.Fault.modules.ModuleManager;
 import com.revampes.Fault.utility.terminals.SlotData;
 import com.revampes.Fault.utility.terminals.TerminalRenderUtils;
-import it.unimi.dsi.fastutil.ints.Int2ObjectMaps;
 import net.minecraft.item.ItemStack;
-import net.minecraft.screen.sync.ComponentChangesHash;
-import net.minecraft.screen.sync.ItemStackHash;
 
 import java.util.Deque;
 import java.util.HashSet;
@@ -17,10 +14,14 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class StartsWithTerminal extends AbstractTerminal {
+    private static final long QUEUE_RECHECK_DELAY_MS = 300L;
+    private static final long PENDING_CONFIRM_TIMEOUT_MS = 1400L;
     private String startingLetter = null;
     private final Deque<int[]> queuedClicks = new LinkedList<>();
     private final Set<Integer> pendingClicks = new HashSet<>();
+    private final java.util.Map<Integer, Long> pendingSince = new java.util.HashMap<>();
     private long lastQueuedSendAt = 0L;
+    private long queueBecameEmptyAt = 0L;
 
     @Override
     public String getTerminalName() {
@@ -29,7 +30,7 @@ public class StartsWithTerminal extends AbstractTerminal {
 
     @Override
     public boolean matches(String windowTitle) {
-        return windowTitle.matches("^What starts with: '(\\w)\'\\?$");
+        return windowTitle.matches("^What starts with: '(\\w)\\'\\?$");
     }
 
     @Override
@@ -46,7 +47,9 @@ public class StartsWithTerminal extends AbstractTerminal {
             solutionSlots.clear();
             queuedClicks.clear();
             pendingClicks.clear();
+            pendingSince.clear();
             lastQueuedSendAt = 0L;
+            queueBecameEmptyAt = 0L;
             windowSize = slotCount;
         }
     }
@@ -113,8 +116,19 @@ public class StartsWithTerminal extends AbstractTerminal {
         }
 
         Set<Integer> freshSolution = new HashSet<>(solutionSlots);
+        if (queuedClicks.isEmpty()) {
+            long now = System.currentTimeMillis();
+            pendingClicks.removeIf(slot -> {
+                if (!freshSolution.contains(slot)) return true;
+                long markedAt = pendingSince.getOrDefault(slot, now);
+                return now - markedAt >= PENDING_CONFIRM_TIMEOUT_MS;
+            });
+            pendingSince.keySet().retainAll(pendingClicks);
+        } else {
+            queueBecameEmptyAt = 0L;
+            pendingClicks.retainAll(freshSolution);
+        }
         solutionSlots.removeAll(pendingClicks);
-        pendingClicks.retainAll(freshSolution);
     }
 
     @Override
@@ -122,16 +136,18 @@ public class StartsWithTerminal extends AbstractTerminal {
         if (solutionSlots.contains(slotIndex)) {
             solutionSlots.remove(slotIndex);
             pendingClicks.add(slotIndex);
+            pendingSince.put(slotIndex, System.currentTimeMillis());
             int normalizedButton = button == 0 ? 0 : 1;
             if (shouldQueueClick()) {
                 queuedClicks.addLast(new int[]{slotIndex, normalizedButton});
+                queueBecameEmptyAt = 0L;
                 processQueuedClicks();
             } else {
                 sendClickPacket(slotIndex, normalizedButton);
             }
         }
     }
-    
+
     private void sendClickPacket(int slot, int button) {
         try {
             net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
@@ -139,13 +155,13 @@ public class StartsWithTerminal extends AbstractTerminal {
                 net.minecraft.screen.ScreenHandler handler = mc.player.currentScreenHandler;
                 net.minecraft.screen.sync.ComponentChangesHash.ComponentHasher hasher = component -> component.hashCode();
                 net.minecraft.screen.sync.ItemStackHash cursorHash = net.minecraft.screen.sync.ItemStackHash.fromItemStack(mc.player.currentScreenHandler.getCursorStack(), hasher);
-                net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket packet = 
+                net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket packet =
                     new net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket(
                         handler.syncId,
-                        handler.getRevision(), 
-                        (short) slot, 
-                        (byte) button, 
-                        net.minecraft.screen.slot.SlotActionType.PICKUP, 
+                        handler.getRevision(),
+                        (short) slot,
+                        (byte) button,
+                        net.minecraft.screen.slot.SlotActionType.PICKUP,
                         it.unimi.dsi.fastutil.ints.Int2ObjectMaps.emptyMap(),
                         cursorHash
                     );
@@ -157,7 +173,7 @@ public class StartsWithTerminal extends AbstractTerminal {
 
     @Override
     public void render(RenderScreenEvent event) {
-        if (!inTerminal || windowId == -1 || solutionSlots.isEmpty()) return;
+        if (!inTerminal || windowId == -1) return;
 
         int screenWidth = event.context.getScaledWindowWidth();
         int screenHeight = event.context.getScaledWindowHeight();
@@ -181,5 +197,10 @@ public class StartsWithTerminal extends AbstractTerminal {
         for (int slot : solutionSlots) {
             TerminalRenderUtils.drawSlotHighlight(event.context, slot, scale, offsetX, offsetY + titleHeight, 0xFFFFAA00);
         }
+    }
+
+    @Override
+    public int getPendingQueueCount() {
+        return queuedClicks.size();
     }
 }

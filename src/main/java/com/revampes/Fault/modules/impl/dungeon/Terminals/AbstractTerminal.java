@@ -66,6 +66,10 @@ public abstract class AbstractTerminal {
         return solutionSlots;
     }
 
+    public int getPendingQueueCount() {
+        return 0;
+    }
+
     protected int getItemDamage(ItemStack stack) {
         if (stack.isEmpty()) return -1;
         return stack.getDamage();

@@ -13,6 +13,7 @@ import com.revampes.Fault.settings.impl.ColorSetting;
 import com.revampes.Fault.settings.impl.SliderSetting;
 
 import meteordevelopment.orbit.EventHandler;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.item.ItemStack;
 import net.minecraft.screen.GenericContainerScreenHandler;
@@ -92,6 +93,27 @@ public class TerminalManager extends Module {
         // Render active terminal if any
         if (activeTerminal != null && activeTerminal.isInTerminal()) {
             activeTerminal.render(event);
+
+            int queuedLeft = activeTerminal.getPendingQueueCount();
+            if (isQueueClickEnabled() && queuedLeft > 0) {
+                String label = "Queue Left: " + queuedLeft;
+                int textWidth = MinecraftClient.getInstance().textRenderer.getWidth(label);
+                float overlayScale = getOverlayScale();
+                int width = (int) (9 * 18 * overlayScale);
+                int windowSize = Math.max(9, getActiveWindowSize());
+                int rows = Math.max(1, windowSize / 9);
+                int overlayHeight = (int) (rows * 18 * overlayScale);
+                String terminalName = getActiveTerminalName();
+                if ("Numbers".equals(terminalName) || "Rubix".equals(terminalName)) {
+                    overlayHeight = (int) (6 * 18 * overlayScale);
+                }
+
+                int overlayX = event.context.getScaledWindowWidth() / 2 - width / 2 + (int) Math.round(getOverlayOffsetX() * overlayScale);
+                int overlayY = event.context.getScaledWindowHeight() / 2 - overlayHeight / 2 + (int) Math.round(getOverlayOffsetY() * overlayScale);
+                int x = overlayX + width - textWidth - 6;
+                int y = overlayY + 4;
+                event.context.drawTextWithShadow(MinecraftClient.getInstance().textRenderer, label, x, y, 0xFFFF5555);
+            }
         }
     }
 

@@ -19,6 +19,7 @@ import java.util.Set;
 
 public class NumbersTerminal extends AbstractTerminal {
     private static final int MAX_NUMBERS_SLOTS = 14;
+    private static final long QUEUE_RECHECK_DELAY_MS = 300L;
     private final java.util.List<Integer> fullSolutionSlots = new java.util.ArrayList<>();
     private final List<Integer> orderedSolutionSlots = new ArrayList<>();
     private final Deque<int[]> queuedClicks = new LinkedList<>();
@@ -26,6 +27,7 @@ public class NumbersTerminal extends AbstractTerminal {
     private volatile boolean clicked = false;
     private static final long CLICK_TIMEOUT_MS = 140L;
     private long lastQueuedSendAt = 0L;
+    private long queueBecameEmptyAt = 0L;
     private volatile boolean queueDispatchScheduled = false;
 
     @Override
@@ -52,6 +54,7 @@ public class NumbersTerminal extends AbstractTerminal {
             pendingClicks.clear();
             clicked = false;
             lastQueuedSendAt = 0L;
+            queueBecameEmptyAt = 0L;
             queueDispatchScheduled = false;
             windowSize = slotCount;
         }
@@ -187,7 +190,18 @@ public class NumbersTerminal extends AbstractTerminal {
 
         // Keep predicted clicked slots hidden until server catches up.
         Set<Integer> freshClickable = new HashSet<>(orderedSolutionSlots);
-        pendingClicks.retainAll(freshClickable);
+        if (queuedClicks.isEmpty()) {
+            long now = System.currentTimeMillis();
+            if (queueBecameEmptyAt == 0L) {
+                queueBecameEmptyAt = now;
+            }
+            if (!shouldQueueClick() || now - queueBecameEmptyAt >= QUEUE_RECHECK_DELAY_MS) {
+                pendingClicks.clear();
+            }
+        } else {
+            queueBecameEmptyAt = 0L;
+            pendingClicks.retainAll(freshClickable);
+        }
         orderedSolutionSlots.removeIf(pendingClicks::contains);
         solutionSlots.removeAll(pendingClicks);
         
@@ -213,6 +227,7 @@ public class NumbersTerminal extends AbstractTerminal {
 
         if (shouldQueueClick()) {
             queuedClicks.addLast(new int[]{slotIndex, normalizedButton});
+            queueBecameEmptyAt = 0L;
             processQueuedClicks();
             return;
         }
@@ -289,11 +304,15 @@ public class NumbersTerminal extends AbstractTerminal {
         String title = "§8[§bFault Terminal§8] §aNumbers";
         TerminalRenderUtils.drawText(event.context, title, offsetX, offsetY, 0xFFFFFFFF);
 
+        // Snapshot mutable lists to avoid render-time races with async slot updates.
+        List<Integer> fullSnapshot = new ArrayList<>(fullSolutionSlots);
+        List<Integer> orderedSnapshot = new ArrayList<>(orderedSolutionSlots);
+
         // Draw numbers on valid slots (at most 14)
-        int renderLimit = Math.min(fullSolutionSlots.size(), MAX_NUMBERS_SLOTS);
+        int renderLimit = Math.min(fullSnapshot.size(), MAX_NUMBERS_SLOTS);
         for (int i = 0; i < renderLimit; i++) {
-            int slot = fullSolutionSlots.get(i);
-            int solutionIndex = orderedSolutionSlots.indexOf(slot);
+            int slot = fullSnapshot.get(i);
+            int solutionIndex = orderedSnapshot.indexOf(slot);
             // Highlight nearest 3 clickable slots with decreasing opacity.
             if (solutionIndex >= 0 && solutionIndex < 3 && solutionIndex < MAX_NUMBERS_SLOTS) {
                 int color = solutionIndex == 0 ? 0xCC00FF00 : (solutionIndex == 1 ? 0x9900FF00 : 0x6600FF00);
@@ -307,5 +326,10 @@ public class NumbersTerminal extends AbstractTerminal {
             int textY = slotY + (int)Math.round(4 * scale);
             TerminalRenderUtils.drawCenteredText(event.context, String.valueOf(i + 1), centerX, textY, 0xFFFFFF);
         }
+    }
+
+    @Override
+    public int getPendingQueueCount() {
+        return queuedClicks.size();
     }
 }

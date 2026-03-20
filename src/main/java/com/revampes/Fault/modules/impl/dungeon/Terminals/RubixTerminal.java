@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Set;
 
 public class RubixTerminal extends AbstractTerminal {
+    private static final long QUEUE_RECHECK_DELAY_MS = 300L;
     private final Map<Integer, Integer> slotClicks = new HashMap<>();
     private final java.util.Map<Integer, Integer> solutionValues = new java.util.HashMap<>();
     private final Map<Integer, Integer> pendingPredictedValues = new HashMap<>();
@@ -25,6 +26,7 @@ public class RubixTerminal extends AbstractTerminal {
     private volatile boolean clicked = false;
     private static final long CLICK_TIMEOUT_MS = 140L;
     private long lastQueuedSendAt = 0L;
+    private long queueBecameEmptyAt = 0L;
     private volatile boolean queueDispatchScheduled = false;
     
     private static final int[] RUBIX_ORDER = new int[]{14, 1, 4, 13, 11};
@@ -53,6 +55,7 @@ public class RubixTerminal extends AbstractTerminal {
             queuedClicks.clear();
             clicked = false;
             lastQueuedSendAt = 0L;
+            queueBecameEmptyAt = 0L;
             queueDispatchScheduled = false;
             windowSize = slotCount;
         }
@@ -241,6 +244,18 @@ public class RubixTerminal extends AbstractTerminal {
         }
 
         // Remove pending markers once the server reflects the predicted value.
+        if (queuedClicks.isEmpty()) {
+            long now = System.currentTimeMillis();
+            if (queueBecameEmptyAt == 0L) {
+                queueBecameEmptyAt = now;
+            }
+            if (!shouldQueueClick() || now - queueBecameEmptyAt >= QUEUE_RECHECK_DELAY_MS) {
+                pendingPredictedValues.clear();
+            }
+        } else {
+            queueBecameEmptyAt = 0L;
+        }
+
         Iterator<Map.Entry<Integer, Integer>> it = pendingPredictedValues.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<Integer, Integer> entry = it.next();
@@ -284,6 +299,7 @@ public class RubixTerminal extends AbstractTerminal {
 
         if (shouldQueueClick()) {
             queuedClicks.addLast(new int[]{slotIndex, normalizedButton});
+            queueBecameEmptyAt = 0L;
             processQueuedClicks();
             slotClicks.merge(slotIndex, 1, Integer::sum);
             return;
@@ -340,7 +356,7 @@ public class RubixTerminal extends AbstractTerminal {
 
     @Override
     public void render(RenderScreenEvent event) {
-        if (!inTerminal || windowId == -1 || solutionSlots.isEmpty()) return;
+        if (!inTerminal || windowId == -1) return;
 
         int screenWidth = event.context.getScaledWindowWidth();
         int screenHeight = event.context.getScaledWindowHeight();
@@ -387,5 +403,10 @@ public class RubixTerminal extends AbstractTerminal {
             
             TerminalRenderUtils.drawText(event.context, valueStr, textX, textY, 0xFFFFFFFF);
         }
+    }
+
+    @Override
+    public int getPendingQueueCount() {
+        return queuedClicks.size();
     }
 }

@@ -17,7 +17,8 @@ public class SlotData {
         this.slot = slot;
         this.size = itemStack.getCount();
         this.name = name;
-        this.enchanted = itemStack.hasEnchantments();
+        // Some terminals mark clicked items with glint without a classic enchantment list.
+        this.enchanted = itemStack.hasEnchantments() || itemStack.hasGlint();
         
         // Get proper item ID from registry
         if (!itemStack.isEmpty()) {

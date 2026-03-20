@@ -21,10 +21,14 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class ColorsTerminal extends AbstractTerminal {
+    private static final long QUEUE_RECHECK_DELAY_MS = 300L;
+    private static final long PENDING_CONFIRM_TIMEOUT_MS = 1400L;
     private String extraColor = null;
     private final Deque<int[]> queuedClicks = new LinkedList<>();
     private final Set<Integer> pendingClicks = new HashSet<>();
+    private final Map<Integer, Long> pendingSince = new HashMap<>();
     private long lastQueuedSendAt = 0L;
+    private long queueBecameEmptyAt = 0L;
     private static final Map<String, String> COLOR_REPLACEMENTS = new HashMap<>();
 
     static {
@@ -63,7 +67,9 @@ public class ColorsTerminal extends AbstractTerminal {
             solutionSlots.clear();
             queuedClicks.clear();
             pendingClicks.clear();
+            pendingSince.clear();
             lastQueuedSendAt = 0L;
+            queueBecameEmptyAt = 0L;
             windowSize = slotCount;
         }
     }
@@ -133,8 +139,20 @@ public class ColorsTerminal extends AbstractTerminal {
 
         // Keep clicked entries hidden locally while they are being queued/sent.
         Set<Integer> freshSolution = new HashSet<>(solutionSlots);
+        if (queuedClicks.isEmpty()) {
+            long now = System.currentTimeMillis();
+            pendingClicks.removeIf(slot -> {
+                if (!freshSolution.contains(slot)) return true;
+                long markedAt = pendingSince.getOrDefault(slot, now);
+                // If still unsolved server-side after timeout, unhide for retry.
+                return now - markedAt >= PENDING_CONFIRM_TIMEOUT_MS;
+            });
+            pendingSince.keySet().retainAll(pendingClicks);
+        } else {
+            queueBecameEmptyAt = 0L;
+            pendingClicks.retainAll(freshSolution);
+        }
         solutionSlots.removeAll(pendingClicks);
-        pendingClicks.retainAll(freshSolution);
     }
 
     private String processColorName(String name) {
@@ -149,9 +167,11 @@ public class ColorsTerminal extends AbstractTerminal {
         if (solutionSlots.contains(slotIndex)) {
             solutionSlots.remove(slotIndex);
             pendingClicks.add(slotIndex);
+            pendingSince.put(slotIndex, System.currentTimeMillis());
             int normalizedButton = button == 0 ? 0 : 1;
             if (shouldQueueClick()) {
                 queuedClicks.addLast(new int[]{slotIndex, normalizedButton});
+                queueBecameEmptyAt = 0L;
                 processQueuedClicks();
             } else {
                 sendClickPacket(slotIndex, normalizedButton);
@@ -184,8 +204,7 @@ public class ColorsTerminal extends AbstractTerminal {
 
     @Override
     public void render(RenderScreenEvent event) {
-        // Don't render if not in terminal or no solution found yet
-        if (!inTerminal || windowId == -1 || solutionSlots.isEmpty()) return;
+        if (!inTerminal || windowId == -1) return;
 
         int screenWidth = event.context.getScaledWindowWidth();
         int screenHeight = event.context.getScaledWindowHeight();
@@ -209,5 +228,10 @@ public class ColorsTerminal extends AbstractTerminal {
         for (int slot : solutionSlots) {
             TerminalRenderUtils.drawSlotHighlight(event.context, slot, scale, offsetX, offsetY + titleHeight, 0xFF00FF00);
         }
+    }
+
+    @Override
+    public int getPendingQueueCount() {
+        return queuedClicks.size();
     }
 }
