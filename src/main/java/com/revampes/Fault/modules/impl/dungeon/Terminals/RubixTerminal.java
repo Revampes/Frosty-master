@@ -112,6 +112,9 @@ public class RubixTerminal extends AbstractTerminal {
             if (next != null) {
                 sendClickPacket(next[0], next[1]);
                 lastQueuedSendAt = System.currentTimeMillis();
+                if (ModuleManager.terminalManager != null) {
+                    ModuleManager.terminalManager.recordQueuedClickSend(getTerminalName());
+                }
                 if (!queuedClicks.isEmpty()) {
                     scheduleQueuedDispatch();
                 }
@@ -331,9 +334,7 @@ public class RubixTerminal extends AbstractTerminal {
                     }
                 }).start();
             }
-        } catch (Exception e) {
-            System.out.println("[Rubix] Error sending click packet: " + e.getMessage());
-            e.printStackTrace();
+        } catch (Exception ignored) {
         }
     }
 

@@ -1,26 +1,27 @@
 package com.revampes.Fault.modules.impl.dungeon.Terminals;
 
+import java.awt.Color;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
+
 import com.revampes.Fault.events.impl.RenderScreenEvent;
 import com.revampes.Fault.events.impl.SlotClickEvent;
 import com.revampes.Fault.modules.Module;
 import com.revampes.Fault.settings.impl.ButtonSetting;
 import com.revampes.Fault.settings.impl.ColorSetting;
 import com.revampes.Fault.settings.impl.SliderSetting;
+
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.item.ItemStack;
 import net.minecraft.screen.GenericContainerScreenHandler;
-import net.minecraft.screen.slot.SlotActionType;
-
-import java.awt.*;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.ArrayList;
-import java.util.List;
 
 public class TerminalManager extends Module {
     private final List<AbstractTerminal> terminals = new ArrayList<>();
     private AbstractTerminal activeTerminal = null;
     private long lastContainerSyncAt = 0L;
+    private long lastQueueClickSentAt = -1L;
     private static final long CONTAINER_SYNC_INTERVAL_MS = 80L;
 
     // Settings
@@ -32,6 +33,8 @@ public class TerminalManager extends Module {
     private final ButtonSetting enableStartsWith = new ButtonSetting("Starts With Terminal", true);
     private final ButtonSetting queueClick = new ButtonSetting("Queue click", true);
     private final SliderSetting queueClickDelay = new SliderSetting("Queue click delay", "ms", 200.0, 100.0, 500.0, 10.0);
+    private final ButtonSetting holdClick = new ButtonSetting("Hold Click", false);
+    private final SliderSetting holdClickDelay = new SliderSetting("Hold Click Delay", "ms", 120.0, 50.0, 300.0, 10.0);
 
     private final ColorSetting highlightColor = new ColorSetting("Highlight Color", new Color(0, 255, 0, 128));
     private final SliderSetting scale = new SliderSetting("Overlay Scale", 1.0f, 0.5f, 4.0f, 0.1f);
@@ -62,6 +65,8 @@ public class TerminalManager extends Module {
         this.registerSetting(enableStartsWith);
         this.registerSetting(queueClick);
         this.registerSetting(queueClickDelay);
+        this.registerSetting(holdClick);
+        this.registerSetting(holdClickDelay);
         this.registerSetting(highlightColor);
         this.registerSetting(scale);
         this.registerSetting(renderOffsetX);
@@ -107,19 +112,14 @@ public class TerminalManager extends Module {
         for (AbstractTerminal terminal : terminals) {
             if (terminal.matches(windowTitle)) {
                 matched = true;
-                System.out.println("[TERMINAL] Matched: " + terminal.getTerminalName());
                 if (isTerminalEnabled(terminal.getTerminalName())) {
                     activeTerminal = terminal;
                     activeTerminal.onWindowOpen(windowTitle, windowId, slotCount);
                     lastContainerSyncAt = 0L;
-                    System.out.println("[TERMINAL] Activated " + terminal.getTerminalName());
                     // Slot reading will happen after delay in the mixin
                     return;
                 }
             }
-        }
-        if (!matched) {
-            System.out.println("[TERMINAL] No match for: " + windowTitle);
         }
     }
 
@@ -142,28 +142,17 @@ public class TerminalManager extends Module {
     }
 
     public void handleSlotReading(GenericContainerScreenHandler handler) {
-        if (activeTerminal == null || !activeTerminal.isInTerminal()) {
-            System.out.println("[TERMINAL] No active terminal when reading slots");
-            return;
-        }
+        if (activeTerminal == null || !activeTerminal.isInTerminal()) return;
         
-        System.out.println("[TERMINAL] Reading slots after delay...");
-        int nonEmptyCount = 0;
         int limit = Math.min(handler.slots.size(), activeTerminal.getWindowSize());
         for (int i = 0; i < limit; i++) {
             var slot = handler.slots.get(i);
             var itemStack = slot.getStack();
             if (!itemStack.isEmpty()) {
-                nonEmptyCount++;
-                String itemName = itemStack.getItem().toString();
-                System.out.println("[TERMINAL] Slot " + i + ": " + itemName + " count=" + itemStack.getCount());
                 activeTerminal.onSlotUpdate(i, itemStack);
             }
         }
-        System.out.println("[TERMINAL] Found " + nonEmptyCount + " non-empty slots");
-        System.out.println("[TERMINAL] Calling solve()");
         activeTerminal.solve();
-        System.out.println("[TERMINAL] Solution slots: " + activeTerminal.getSolution());
     }
 
     public void handleTerminalClick(int slot, int button) {
@@ -221,8 +210,38 @@ public class TerminalManager extends Module {
         return queueClick.isToggled();
     }
 
+    public boolean isHoldClickEnabled() {
+        return holdClick.isToggled();
+    }
+
+    public long getQueueClickBaseIntervalMs() {
+        return Math.max(100L, Math.min(500L, Math.round(queueClickDelay.getInput())));
+    }
+
+    public long getHoldClickIntervalMs() {
+        return Math.max(50L, Math.round(holdClickDelay.getInput()));
+    }
+
+    public long getEffectiveHoldClickIntervalMs() {
+        if (isQueueClickEnabled()) {
+            return getQueueClickBaseIntervalMs();
+        }
+        return getHoldClickIntervalMs();
+    }
+
+    public void recordQueuedClickSend(String terminalName) {
+        long now = System.currentTimeMillis();
+        if (lastQueueClickSentAt > 0L) {
+            long delta = now - lastQueueClickSentAt;
+            System.out.println("[QueueClick] " + terminalName + " interval=" + delta + "ms");
+        } else {
+            System.out.println("[QueueClick] " + terminalName + " first click");
+        }
+        lastQueueClickSentAt = now;
+    }
+
     public long getQueueClickIntervalMs() {
-        long base = Math.max(100L, Math.min(500L, Math.round(queueClickDelay.getInput())));
+        long base = getQueueClickBaseIntervalMs();
         int jitter = ThreadLocalRandom.current().nextInt(10, 21);
         int sign = ThreadLocalRandom.current().nextBoolean() ? 1 : -1;
         long jittered = base + sign * (long) jitter;

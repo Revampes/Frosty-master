@@ -20,15 +20,13 @@ public abstract class TerminalOpenCloseMixin {
                 String title = screen.getTitle().getString();
                 int windowId = handler.syncId;
                 int slotCount = handler.getRows() * 9;
-                System.out.println("[TERMINAL MIXIN] Screen: '" + title + "' slots=" + slotCount);
                 ModuleManager.terminalManager.handleScreenOpen(title, windowId, slotCount, handler);                
                 // Schedule slot reading after a short delay to let slots populate
                 new Thread(() -> {
                     try {
                         Thread.sleep(100); // Wait for server to send slot update packets
                         ModuleManager.terminalManager.handleSlotReading(handler);
-                    } catch (Exception e) {
-                        e.printStackTrace();
+                    } catch (Exception ignored) {
                     }
                 }).start();            }
         }
