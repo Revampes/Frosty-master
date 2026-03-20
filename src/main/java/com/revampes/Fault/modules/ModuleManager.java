@@ -15,6 +15,7 @@ import com.revampes.Fault.modules.impl.dungeon.KeyHighlight;
 import com.revampes.Fault.modules.impl.dungeon.LividESP;
 import com.revampes.Fault.modules.impl.dungeon.MobHighlight;
 import com.revampes.Fault.modules.impl.dungeon.SecretClick;
+import com.revampes.Fault.modules.impl.dungeon.Terminals.TerminalManager;
 import com.revampes.Fault.modules.impl.farming.GardenCleaner;
 import com.revampes.Fault.modules.impl.fishing.AutoFish;
 import com.revampes.Fault.modules.impl.foraging.LushlilacNuker;
@@ -138,6 +139,7 @@ public class ModuleManager {
     public static CrateAura crateAura;
     public static KeyHighlight keyHighlight;
     public static SlotBinds slotBinds;
+    public static TerminalManager terminalManager;
 
     public void register() {
         this.addModule(tps = new TPS());
@@ -207,6 +209,7 @@ public class ModuleManager {
         this.addModule(crateAura = new CrateAura());
         this.addModule(keyHighlight = new KeyHighlight());
         this.addModule(slotBinds = new SlotBinds());
+        this.addModule(terminalManager = new TerminalManager());
         modules.sort(Comparator.comparing(Module::getName));
     }
 

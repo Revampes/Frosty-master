@@ -1,0 +1,390 @@
+package com.revampes.Fault.modules.impl.dungeon.Terminals;
+
+import com.revampes.Fault.events.impl.RenderScreenEvent;
+import com.revampes.Fault.modules.ModuleManager;
+import com.revampes.Fault.utility.terminals.SlotData;
+import com.revampes.Fault.utility.terminals.TerminalRenderUtils;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMaps;
+import net.minecraft.item.ItemStack;
+import net.minecraft.screen.sync.ComponentChangesHash;
+import net.minecraft.screen.sync.ItemStackHash;
+
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.Map;
+import java.util.Set;
+
+public class RubixTerminal extends AbstractTerminal {
+    private final Map<Integer, Integer> slotClicks = new HashMap<>();
+    private final java.util.Map<Integer, Integer> solutionValues = new java.util.HashMap<>();
+    private final Map<Integer, Integer> pendingPredictedValues = new HashMap<>();
+    private final Deque<int[]> queuedClicks = new LinkedList<>();
+    private volatile boolean clicked = false;
+    private static final long CLICK_TIMEOUT_MS = 140L;
+    private long lastQueuedSendAt = 0L;
+    private volatile boolean queueDispatchScheduled = false;
+    
+    private static final int[] RUBIX_ORDER = new int[]{14, 1, 4, 13, 11};
+
+    @Override
+    public String getTerminalName() {
+        return "Rubix";
+    }
+
+    @Override
+    public boolean matches(String windowTitle) {
+        return windowTitle.equals("Change all to same color!");
+    }
+
+    @Override
+    public void onWindowOpen(String title, int windowId, int slotCount) {
+        if (matches(title)) {
+            this.windowId = windowId;
+            inTerminal = true;
+            openedAt = System.currentTimeMillis();
+            slots.clear();
+            solutionSlots.clear();
+            slotClicks.clear();
+            solutionValues.clear();
+            pendingPredictedValues.clear();
+            queuedClicks.clear();
+            clicked = false;
+            lastQueuedSendAt = 0L;
+            queueDispatchScheduled = false;
+            windowSize = slotCount;
+        }
+    }
+
+    @Override
+    public void onSlotUpdate(int slotIndex, ItemStack itemStack) {
+        if (slotIndex < 0 || slotIndex >= windowSize) return;
+
+        SlotData data = new SlotData(slotIndex, itemStack, itemStack.isEmpty() ? "" : itemStack.getName().getString());
+        if (slotIndex < slots.size()) {
+            slots.set(slotIndex, data);
+        } else {
+            while (slots.size() <= slotIndex) {
+                slots.add(null);
+            }
+            slots.set(slotIndex, data);
+        }
+
+        if (slots.size() >= windowSize) {
+            solve();
+            clicked = false;
+            processQueuedClicks();
+        }
+    }
+
+    private boolean isValidClick(int slot, int button) {
+        Integer value = solutionValues.get(slot);
+        if (value == null) return false;
+        return (value > 0 && button == 0) || (value < 0 && button == 1);
+    }
+
+    private void applyLocalPrediction(int slot, int button) {
+        Integer value = solutionValues.get(slot);
+        if (value == null) return;
+
+        int next = button == 0 ? value - 1 : value + 1;
+        pendingPredictedValues.put(slot, next);
+        if (next == 0) {
+            solutionValues.remove(slot);
+            solutionSlots.remove(slot);
+            slotClicks.remove(slot);
+        } else {
+            solutionValues.put(slot, next);
+        }
+    }
+
+    private void processQueuedClicks() {
+        if (clicked || queuedClicks.isEmpty()) return;
+        if (!canSendNextQueuedClick()) {
+            scheduleQueuedDispatch();
+            return;
+        }
+
+        if (shouldQueueClick()) {
+            int[] next = queuedClicks.pollFirst();
+            if (next != null) {
+                sendClickPacket(next[0], next[1]);
+                lastQueuedSendAt = System.currentTimeMillis();
+                if (!queuedClicks.isEmpty()) {
+                    scheduleQueuedDispatch();
+                }
+            }
+            return;
+        }
+
+        while (!queuedClicks.isEmpty()) {
+            int[] next = queuedClicks.pollFirst();
+            if (isValidClick(next[0], next[1])) {
+                sendClickPacket(next[0], next[1]);
+                lastQueuedSendAt = System.currentTimeMillis();
+                if (!queuedClicks.isEmpty()) {
+                    scheduleQueuedDispatch();
+                }
+                return;
+            }
+        }
+    }
+
+    private void scheduleQueuedDispatch() {
+        if (!shouldQueueClick() || queuedClicks.isEmpty()) return;
+        if (queueDispatchScheduled) return;
+
+        queueDispatchScheduled = true;
+        long remaining = Math.max(5L, getQueueClickIntervalMs() - (System.currentTimeMillis() - lastQueuedSendAt));
+        int initialWindowId = windowId;
+        new Thread(() -> {
+            try {
+                Thread.sleep(remaining);
+                if (!inTerminal || windowId != initialWindowId) return;
+                processQueuedClicks();
+            } catch (InterruptedException ignored) {
+            } finally {
+                queueDispatchScheduled = false;
+                if (shouldQueueClick() && inTerminal && !queuedClicks.isEmpty()) {
+                    processQueuedClicks();
+                }
+            }
+        }).start();
+    }
+
+    private boolean shouldQueueClick() {
+        return ModuleManager.terminalManager != null && ModuleManager.terminalManager.isQueueClickEnabled();
+    }
+
+    private long getQueueClickIntervalMs() {
+        return ModuleManager.terminalManager != null ? ModuleManager.terminalManager.getQueueClickIntervalMs() : 200L;
+    }
+
+    private boolean canSendNextQueuedClick() {
+        if (!shouldQueueClick()) return true;
+        return System.currentTimeMillis() - lastQueuedSendAt >= getQueueClickIntervalMs();
+    }
+
+    private int calcIndex(int index) {
+        return (index + RUBIX_ORDER.length) % RUBIX_ORDER.length;
+    }
+
+    private int getRubixMeta(SlotData slot) {
+        if (slot == null) return -1;
+
+        // Modern versions expose pane color in item id instead of durability metadata.
+        String type = slot.itemType == null ? "" : slot.itemType;
+        if (type.contains("red_stained_glass_pane")) return 14;
+        if (type.contains("orange_stained_glass_pane")) return 1;
+        if (type.contains("yellow_stained_glass_pane")) return 4;
+        if (type.contains("green_stained_glass_pane")) return 13;
+        if (type.contains("blue_stained_glass_pane")) return 11;
+
+        // Legacy fallback for older metadata-based items.
+        if (slot.meta == 14 || slot.meta == 1 || slot.meta == 4 || slot.meta == 13 || slot.meta == 11) {
+            return slot.meta;
+        }
+        return -1;
+    }
+
+    @Override
+    public void solve() {
+        Map<Integer, Integer> freshValues = new HashMap<>();
+        Set<Integer> freshSlots = new HashSet<>();
+
+        int[] allowedSlots = TerminalRenderUtils.getAllowedSlots("rubix");
+
+        int[] clicks = new int[]{0, 0, 0, 0, 0};
+        for (int i = 0; i < RUBIX_ORDER.length; i++) {
+            int targetMeta = RUBIX_ORDER[calcIndex(i)];
+            for (SlotData slot : slots) {
+                if (slot == null || !slotIsAllowed(slot.slot, allowedSlots)) continue;
+                int slotMeta = getRubixMeta(slot);
+                if (slotMeta == -1) continue;
+                if (slotMeta == targetMeta) continue;
+
+                if (slotMeta == RUBIX_ORDER[calcIndex(i - 2)]) clicks[i] += 2;
+                else if (slotMeta == RUBIX_ORDER[calcIndex(i - 1)]) clicks[i] += 1;
+                else if (slotMeta == RUBIX_ORDER[calcIndex(i + 1)]) clicks[i] += 1;
+                else if (slotMeta == RUBIX_ORDER[calcIndex(i + 2)]) clicks[i] += 2;
+            }
+        }
+
+        int origin = 0;
+        for (int i = 1; i < clicks.length; i++) {
+            if (clicks[i] < clicks[origin]) {
+                origin = i;
+            }
+        }
+
+        int originMeta = RUBIX_ORDER[calcIndex(origin)];
+        for (SlotData slot : slots) {
+            if (slot == null || !slotIsAllowed(slot.slot, allowedSlots)) continue;
+            int slotMeta = getRubixMeta(slot);
+            if (slotMeta == -1 || slotMeta == originMeta) continue;
+
+            int value = 0;
+            if (slotMeta == RUBIX_ORDER[calcIndex(origin - 2)]) value = 2;
+            else if (slotMeta == RUBIX_ORDER[calcIndex(origin - 1)]) value = 1;
+            else if (slotMeta == RUBIX_ORDER[calcIndex(origin + 1)]) value = -1;
+            else if (slotMeta == RUBIX_ORDER[calcIndex(origin + 2)]) value = -2;
+
+            if (value != 0) {
+                freshSlots.add(slot.slot);
+                freshValues.put(slot.slot, value);
+            }
+        }
+
+        // Remove pending markers once the server reflects the predicted value.
+        Iterator<Map.Entry<Integer, Integer>> it = pendingPredictedValues.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<Integer, Integer> entry = it.next();
+            int slot = entry.getKey();
+            int predicted = entry.getValue();
+            int serverValue = freshValues.getOrDefault(slot, 0);
+            if (serverValue == predicted) {
+                it.remove();
+            }
+        }
+
+        // Keep pending predicted state visible to avoid flash while server is delayed.
+        for (Map.Entry<Integer, Integer> entry : pendingPredictedValues.entrySet()) {
+            int slot = entry.getKey();
+            int predicted = entry.getValue();
+            if (predicted == 0) {
+                freshValues.remove(slot);
+                freshSlots.remove(slot);
+            } else {
+                freshValues.put(slot, predicted);
+                freshSlots.add(slot);
+            }
+        }
+
+        slotClicks.clear();
+        solutionSlots.clear();
+        solutionValues.clear();
+        solutionSlots.addAll(freshSlots);
+        solutionValues.putAll(freshValues);
+        for (int slot : solutionSlots) {
+            slotClicks.put(slot, 1);
+        }
+    }
+
+    @Override
+    public void onSlotClick(int slotIndex, int button) {
+        int normalizedButton = button == 0 ? 0 : 1;
+        if (!isValidClick(slotIndex, normalizedButton)) return;
+
+        applyLocalPrediction(slotIndex, normalizedButton);
+
+        if (shouldQueueClick()) {
+            queuedClicks.addLast(new int[]{slotIndex, normalizedButton});
+            processQueuedClicks();
+            slotClicks.merge(slotIndex, 1, Integer::sum);
+            return;
+        }
+
+        if (clicked) {
+            queuedClicks.addLast(new int[]{slotIndex, normalizedButton});
+        } else {
+            sendClickPacket(slotIndex, normalizedButton);
+        }
+        slotClicks.merge(slotIndex, 1, Integer::sum);
+    }
+    
+    private void sendClickPacket(int slot, int button) {
+        try {
+            net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
+            if (mc.player != null && mc.player.currentScreenHandler != null) {
+                clicked = true;
+                net.minecraft.screen.ScreenHandler handler = mc.player.currentScreenHandler;
+                net.minecraft.screen.sync.ComponentChangesHash.ComponentHasher hasher = component -> component.hashCode();
+                net.minecraft.screen.sync.ItemStackHash cursorHash = net.minecraft.screen.sync.ItemStackHash.fromItemStack(mc.player.currentScreenHandler.getCursorStack(), hasher);
+                net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket packet = 
+                    new net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket(
+                        handler.syncId,
+                        handler.getRevision(), 
+                        (short) slot, 
+                        (byte) button, 
+                        net.minecraft.screen.slot.SlotActionType.PICKUP, 
+                        it.unimi.dsi.fastutil.ints.Int2ObjectMaps.emptyMap(),
+                        cursorHash
+                    );
+                mc.getNetworkHandler().sendPacket(packet);
+
+                if (shouldQueueClick()) {
+                    clicked = false;
+                    return;
+                }
+
+                int initialWindowId = windowId;
+                new Thread(() -> {
+                    try {
+                        Thread.sleep(CLICK_TIMEOUT_MS);
+                        if (!inTerminal || windowId != initialWindowId) return;
+                        // Release in-flight lock if server update is delayed and continue queue.
+                        clicked = false;
+                        processQueuedClicks();
+                    } catch (InterruptedException ignored) {
+                    }
+                }).start();
+            }
+        } catch (Exception e) {
+            System.out.println("[Rubix] Error sending click packet: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    public void render(RenderScreenEvent event) {
+        if (!inTerminal || windowId == -1 || solutionSlots.isEmpty()) return;
+
+        int screenWidth = event.context.getScaledWindowWidth();
+        int screenHeight = event.context.getScaledWindowHeight();
+        float scale = ModuleManager.terminalManager != null ? ModuleManager.terminalManager.getOverlayScale() : 1.0f;
+
+        int width = (int)(9 * 18 * scale);
+        int titleHeight = (int)Math.round(18 * scale);
+        int gridRows = 5;
+        int gridHeight = (int)(gridRows * 18 * scale);
+        int height = titleHeight + gridHeight;
+
+        int offsetX = screenWidth / 2 - width / 2 + (int) Math.round((ModuleManager.terminalManager != null ? ModuleManager.terminalManager.getOverlayOffsetX() : 0) * scale);
+        int offsetY = screenHeight / 2 - height / 2 + (int) Math.round((ModuleManager.terminalManager != null ? ModuleManager.terminalManager.getOverlayOffsetY() : 0) * scale);
+
+        // Draw background
+        event.context.fill(offsetX - 2, offsetY - 2, offsetX + width + 4, offsetY + height + 4, 0xFF000000);
+
+        // Draw title
+        String title = "§8[§bFault Terminal§8] §aRubix";
+        TerminalRenderUtils.drawText(event.context, title, offsetX, offsetY, 0xFFFFFFFF);
+
+        // Draw solution slots with click direction indicators
+        for (int slot : solutionSlots) {
+            Integer value = solutionValues.get(slot);
+            if (value == null) continue;
+            int clickValue = value;
+            int color = clickValue > 0 ? 0xFF00AA00 : 0xFFAA0000; // Green for left, red for right
+            
+            // Draw the highlight box for this slot
+            TerminalRenderUtils.drawSlotHighlight(event.context, slot, scale, offsetX, offsetY + titleHeight, color);
+            
+            // Draw the click count text centered in the slot
+            int slotCol = slot % 9;
+            int slotRow = slot / 9;
+            int slotX = offsetX + (int)(slotCol * 18 * scale);
+            int slotY = offsetY + titleHeight + (int)(slotRow * 18 * scale);
+            
+            // Keep sign like the JS reference so direction is explicit.
+            String valueStr = String.valueOf(clickValue);
+            
+            int textWidth = net.minecraft.client.MinecraftClient.getInstance().textRenderer.getWidth(valueStr);
+            int textX = slotX + ((int)(16 * scale) - textWidth) / 2;
+            int textY = slotY + (int)Math.round(4 * scale);
+            
+            TerminalRenderUtils.drawText(event.context, valueStr, textX, textY, 0xFFFFFFFF);
+        }
+    }
+}
