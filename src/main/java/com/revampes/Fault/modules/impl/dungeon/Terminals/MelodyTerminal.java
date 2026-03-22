@@ -107,36 +107,17 @@ public class MelodyTerminal extends AbstractTerminal {
     @Override
     public void onSlotClick(int slotIndex, int button) {
         // Melody has direct button clicks only; no queue/prediction.
+        int normalizedButton = button == 0 ? 0 : 1;
         for (int buttonSlot : MELODY_BUTTONS) {
             if (slotIndex == buttonSlot) {
-                sendClickPacket(slotIndex, 0);
+                sendClickPacket(slotIndex, normalizedButton);
                 break;
             }
         }
     }
     
     private void sendClickPacket(int slot, int button) {
-        try {
-            net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
-            if (mc.player != null && mc.player.currentScreenHandler != null) {
-                net.minecraft.screen.ScreenHandler handler = mc.player.currentScreenHandler;
-                net.minecraft.screen.sync.ComponentChangesHash.ComponentHasher hasher = component -> component.hashCode();
-                net.minecraft.screen.sync.ItemStackHash cursorHash = net.minecraft.screen.sync.ItemStackHash.fromItemStack(mc.player.currentScreenHandler.getCursorStack(), hasher);
-                net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket packet = 
-                    new net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket(
-                        handler.syncId,
-                        handler.getRevision(), 
-                        (short) slot, 
-                        (byte) button, 
-                        net.minecraft.screen.slot.SlotActionType.PICKUP, 
-                        it.unimi.dsi.fastutil.ints.Int2ObjectMaps.emptyMap(),
-                        cursorHash
-                    );
-                mc.getNetworkHandler().sendPacket(packet);
-            }
-        } catch (Exception e) {
-            // Ignore send failures to avoid noisy logs while the container is changing.
-        }
+        sendWindowClickNoPickup(slot, button);
     }
 
     @Override

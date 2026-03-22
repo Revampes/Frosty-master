@@ -11,14 +11,14 @@ import net.minecraft.screen.sync.ItemStackHash;
 
 import java.util.Deque;
 import java.util.HashSet;
-import java.util.LinkedList;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 
 public class RedGreenTerminal extends AbstractTerminal {
     private static final long QUEUE_RECHECK_DELAY_MS = 300L;
-    private final Deque<int[]> queuedClicks = new LinkedList<>();
-    private final Set<Integer> pendingClicks = new HashSet<>();
-    private long lastQueuedSendAt = 0L;
+    private final Deque<int[]> queuedClicks = new ConcurrentLinkedDeque<>();
+    private final Set<Integer> pendingClicks = ConcurrentHashMap.newKeySet();
     private long queueBecameEmptyAt = 0L;
 
     @Override
@@ -41,8 +41,8 @@ public class RedGreenTerminal extends AbstractTerminal {
             solutionSlots.clear();
             queuedClicks.clear();
             pendingClicks.clear();
-            lastQueuedSendAt = 0L;
             queueBecameEmptyAt = 0L;
+            resetQueueDispatchState();
             windowSize = slotCount;
         }
     }
@@ -72,25 +72,34 @@ public class RedGreenTerminal extends AbstractTerminal {
         return ModuleManager.terminalManager != null && ModuleManager.terminalManager.isQueueClickEnabled();
     }
 
-    private long getQueueClickIntervalMs() {
-        return ModuleManager.terminalManager != null ? ModuleManager.terminalManager.getQueueClickIntervalMs() : 200L;
-    }
-
-    private boolean canSendNextQueuedClick() {
-        return System.currentTimeMillis() - lastQueuedSendAt >= getQueueClickIntervalMs();
-    }
-
     private void processQueuedClicks() {
         if (!shouldQueueClick() || queuedClicks.isEmpty()) return;
-        if (!canSendNextQueuedClick()) return;
+        
+        // Clear stuck queue if timeout exceeded
+        if (isQueuedClickTimeout()) {
+            queuedClicks.clear();
+            pendingClicks.clear();
+            resetQueueDispatchState();
+            return;
+        }
+        
+        if (isAwaitingQueuedClickAck()) return;
+        if (!canDispatchQueuedClick(true)) return;
 
-        int[] next = queuedClicks.pollFirst();
+        int[] next = queuedClicks.peekFirst();
         if (next == null) return;
-        sendClickPacket(next[0], next[1]);
-        lastQueuedSendAt = System.currentTimeMillis();
+        if (!sendClickPacket(next[0], next[1])) return;
+        markQueuedClickDispatched(true);
+        recordQueuedClickSent();
         if (ModuleManager.terminalManager != null) {
             ModuleManager.terminalManager.recordQueuedClickSend(getTerminalName());
         }
+    }
+
+    @Override
+    protected void onQueuedClickAcknowledged() {
+        queuedClicks.pollFirst();
+        processQueuedClicks();
     }
 
     @Override
@@ -131,42 +140,26 @@ public class RedGreenTerminal extends AbstractTerminal {
 
     @Override
     public void onSlotClick(int slotIndex, int button) {
-        if (solutionSlots.contains(slotIndex)) {
-            solutionSlots.remove(slotIndex);
-            pendingClicks.add(slotIndex);
-            int normalizedButton = button == 0 ? 0 : 1;
+        // Check if this exact slot is already queued
+        for (int[] queued : queuedClicks) {
+            if (queued[0] == slotIndex) return;  // Already queued, prevent duplicate
+        }
+        
+        solutionSlots.remove(slotIndex);
+        pendingClicks.add(slotIndex);
+        int normalizedButton = button == 0 ? 0 : 1;
 
-            if (shouldQueueClick()) {
-                queuedClicks.addLast(new int[]{slotIndex, normalizedButton});
-                queueBecameEmptyAt = 0L;
-                processQueuedClicks();
-            } else {
-                sendClickPacket(slotIndex, normalizedButton);
-            }
+        if (shouldQueueClick()) {
+            queuedClicks.addLast(new int[]{slotIndex, normalizedButton});
+            queueBecameEmptyAt = 0L;
+            processQueuedClicks();
+        } else {
+            sendClickPacket(slotIndex, normalizedButton);
         }
     }
     
-    private void sendClickPacket(int slot, int button) {
-        try {
-            net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
-            if (mc.player != null && mc.player.currentScreenHandler != null) {
-                net.minecraft.screen.ScreenHandler handler = mc.player.currentScreenHandler;
-                ComponentChangesHash.ComponentHasher hasher = component -> component.hashCode();
-                ItemStackHash cursorHash = ItemStackHash.fromItemStack(mc.player.currentScreenHandler.getCursorStack(), hasher);
-                net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket packet = 
-                    new net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket(
-                        handler.syncId,
-                        handler.getRevision(), 
-                        (short) slot, 
-                        (byte) button, 
-                        net.minecraft.screen.slot.SlotActionType.PICKUP, 
-                        Int2ObjectMaps.emptyMap(),
-                        cursorHash
-                    );
-                mc.getNetworkHandler().sendPacket(packet);
-            }
-        } catch (Exception ignored) {
-        }
+    private boolean sendClickPacket(int slot, int button) {
+        return sendWindowClickNoPickup(slot, button);
     }
 
     @Override

@@ -14,7 +14,7 @@ public abstract class TerminalSlotUpdateMixin {
     @Inject(method = "setStackInSlot", at = @At("TAIL"))
     private void onSlotUpdate(int slot, int revision, ItemStack itemStack, CallbackInfo ci) {
         if (ModuleManager.terminalManager != null && ModuleManager.terminalManager.hasActiveTerminal()) {
-            ModuleManager.terminalManager.handleSlotUpdate(slot, itemStack);
+            ModuleManager.terminalManager.handleSlotUpdate(slot, revision, itemStack);
         }
     }
 }

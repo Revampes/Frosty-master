@@ -3,6 +3,7 @@ package com.revampes.Fault.mixin;
 import com.revampes.Fault.Revampes;
 import com.revampes.Fault.events.impl.RenderScreenEvent;
 import com.revampes.Fault.events.impl.SlotClickEvent;
+import com.revampes.Fault.modules.ModuleManager;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.screen.slot.Slot;
@@ -21,6 +22,15 @@ public abstract class HandledScreenMixin {
 
     @Inject(method = "onMouseClick(Lnet/minecraft/screen/slot/Slot;IILnet/minecraft/screen/slot/SlotActionType;)V", at = @At("HEAD"), cancellable = true)
     private void onMouseClickHook(Slot slot, int slotId, int button, SlotActionType actionType, CallbackInfo ci) {
+        // Bypass vanilla container click handling while a terminal is active to avoid cursor pickup.
+        if (ModuleManager.terminalManager != null && ModuleManager.terminalManager.hasActiveTerminal()) {
+            if (slotId >= 0 && actionType == SlotActionType.PICKUP) {
+                ModuleManager.terminalManager.handleSlotClick(slotId, button);
+            }
+            ci.cancel();
+            return;
+        }
+
         if (Revampes.EVENT_BUS.post(new SlotClickEvent(slot, slotId, button, actionType)).isCancelled()) {
             ci.cancel();
         }

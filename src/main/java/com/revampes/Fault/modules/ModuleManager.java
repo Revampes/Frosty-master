@@ -15,6 +15,7 @@ import com.revampes.Fault.modules.impl.dungeon.KeyHighlight;
 import com.revampes.Fault.modules.impl.dungeon.LividESP;
 import com.revampes.Fault.modules.impl.dungeon.MobHighlight;
 import com.revampes.Fault.modules.impl.dungeon.SecretClick;
+import com.revampes.Fault.modules.impl.dungeon.ThornStun;
 import com.revampes.Fault.modules.impl.dungeon.Terminals.TerminalManager;
 import com.revampes.Fault.modules.impl.farming.GardenCleaner;
 import com.revampes.Fault.modules.impl.fishing.AutoFish;
@@ -133,6 +134,7 @@ public class ModuleManager {
     public static MobHighlight mobHighlight;
     public static BuildHelper buildHelper;
     public static RemovePerks removePerks;
+    public static ThornStun thornStun;
     public static SupplyHelper supplyHelper;
     public static Priority priority;
     public static Pearl pearl;
@@ -203,6 +205,7 @@ public class ModuleManager {
         this.addModule(mobHighlight = new MobHighlight());
         this.addModule(buildHelper = new BuildHelper());
         this.addModule(removePerks = new RemovePerks());
+        this.addModule(thornStun = new ThornStun());
         this.addModule(supplyHelper = new SupplyHelper());
         this.addModule(priority = new Priority());
         this.addModule(pearl = new Pearl());

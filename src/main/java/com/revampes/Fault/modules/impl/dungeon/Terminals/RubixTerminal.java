@@ -13,21 +13,20 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 
 public class RubixTerminal extends AbstractTerminal {
     private static final long QUEUE_RECHECK_DELAY_MS = 300L;
-    private final Map<Integer, Integer> slotClicks = new HashMap<>();
-    private final java.util.Map<Integer, Integer> solutionValues = new java.util.HashMap<>();
-    private final Map<Integer, Integer> pendingPredictedValues = new HashMap<>();
-    private final Deque<int[]> queuedClicks = new LinkedList<>();
+    private final Map<Integer, Integer> slotClicks = new ConcurrentHashMap<>();
+    private final java.util.Map<Integer, Integer> solutionValues = new ConcurrentHashMap<>();
+    private final Map<Integer, Integer> pendingPredictedValues = new ConcurrentHashMap<>();
+    private final Deque<int[]> queuedClicks = new ConcurrentLinkedDeque<>();
     private volatile boolean clicked = false;
     private static final long CLICK_TIMEOUT_MS = 140L;
-    private long lastQueuedSendAt = 0L;
     private long queueBecameEmptyAt = 0L;
-    private volatile boolean queueDispatchScheduled = false;
     
     private static final int[] RUBIX_ORDER = new int[]{14, 1, 4, 13, 11};
 
@@ -54,9 +53,8 @@ public class RubixTerminal extends AbstractTerminal {
             pendingPredictedValues.clear();
             queuedClicks.clear();
             clicked = false;
-            lastQueuedSendAt = 0L;
             queueBecameEmptyAt = 0L;
-            queueDispatchScheduled = false;
+            resetQueueDispatchState();
             windowSize = slotCount;
         }
     }
@@ -105,21 +103,29 @@ public class RubixTerminal extends AbstractTerminal {
 
     private void processQueuedClicks() {
         if (clicked || queuedClicks.isEmpty()) return;
-        if (!canSendNextQueuedClick()) {
-            scheduleQueuedDispatch();
+        boolean queueEnabled = shouldQueueClick();
+        
+        // Clear stuck queue if timeout exceeded
+        if (queueEnabled && isQueuedClickTimeout()) {
+            queuedClicks.clear();
+            resetQueueDispatchState();
+            return;
+        }
+        
+        if (queueEnabled && isAwaitingQueuedClickAck()) {
+            return;
+        }
+        if (!canDispatchQueuedClick(queueEnabled)) {
             return;
         }
 
-        if (shouldQueueClick()) {
-            int[] next = queuedClicks.pollFirst();
-            if (next != null) {
-                sendClickPacket(next[0], next[1]);
-                lastQueuedSendAt = System.currentTimeMillis();
+        if (queueEnabled) {
+            int[] next = queuedClicks.peekFirst();
+            if (next != null && sendClickPacket(next[0], next[1])) {
+                markQueuedClickDispatched(true);
+                recordQueuedClickSent();
                 if (ModuleManager.terminalManager != null) {
                     ModuleManager.terminalManager.recordQueuedClickSend(getTerminalName());
-                }
-                if (!queuedClicks.isEmpty()) {
-                    scheduleQueuedDispatch();
                 }
             }
             return;
@@ -129,48 +135,19 @@ public class RubixTerminal extends AbstractTerminal {
             int[] next = queuedClicks.pollFirst();
             if (isValidClick(next[0], next[1])) {
                 sendClickPacket(next[0], next[1]);
-                lastQueuedSendAt = System.currentTimeMillis();
-                if (!queuedClicks.isEmpty()) {
-                    scheduleQueuedDispatch();
-                }
                 return;
             }
         }
     }
 
-    private void scheduleQueuedDispatch() {
-        if (!shouldQueueClick() || queuedClicks.isEmpty()) return;
-        if (queueDispatchScheduled) return;
-
-        queueDispatchScheduled = true;
-        long remaining = Math.max(5L, getQueueClickIntervalMs() - (System.currentTimeMillis() - lastQueuedSendAt));
-        int initialWindowId = windowId;
-        new Thread(() -> {
-            try {
-                Thread.sleep(remaining);
-                if (!inTerminal || windowId != initialWindowId) return;
-                processQueuedClicks();
-            } catch (InterruptedException ignored) {
-            } finally {
-                queueDispatchScheduled = false;
-                if (shouldQueueClick() && inTerminal && !queuedClicks.isEmpty()) {
-                    processQueuedClicks();
-                }
-            }
-        }).start();
+    @Override
+    protected void onQueuedClickAcknowledged() {
+        queuedClicks.pollFirst();
+        processQueuedClicks();
     }
 
     private boolean shouldQueueClick() {
         return ModuleManager.terminalManager != null && ModuleManager.terminalManager.isQueueClickEnabled();
-    }
-
-    private long getQueueClickIntervalMs() {
-        return ModuleManager.terminalManager != null ? ModuleManager.terminalManager.getQueueClickIntervalMs() : 200L;
-    }
-
-    private boolean canSendNextQueuedClick() {
-        if (!shouldQueueClick()) return true;
-        return System.currentTimeMillis() - lastQueuedSendAt >= getQueueClickIntervalMs();
     }
 
     private int calcIndex(int index) {
@@ -294,6 +271,7 @@ public class RubixTerminal extends AbstractTerminal {
     public void onSlotClick(int slotIndex, int button) {
         int normalizedButton = button == 0 ? 0 : 1;
         if (!isValidClick(slotIndex, normalizedButton)) return;
+        // Allow click if it's valid (other terminals deny rapid duplicate clicks, but Rubix has its own validation)
 
         applyLocalPrediction(slotIndex, normalizedButton);
 
@@ -313,45 +291,27 @@ public class RubixTerminal extends AbstractTerminal {
         slotClicks.merge(slotIndex, 1, Integer::sum);
     }
     
-    private void sendClickPacket(int slot, int button) {
-        try {
-            net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
-            if (mc.player != null && mc.player.currentScreenHandler != null) {
-                clicked = true;
-                net.minecraft.screen.ScreenHandler handler = mc.player.currentScreenHandler;
-                net.minecraft.screen.sync.ComponentChangesHash.ComponentHasher hasher = component -> component.hashCode();
-                net.minecraft.screen.sync.ItemStackHash cursorHash = net.minecraft.screen.sync.ItemStackHash.fromItemStack(mc.player.currentScreenHandler.getCursorStack(), hasher);
-                net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket packet = 
-                    new net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket(
-                        handler.syncId,
-                        handler.getRevision(), 
-                        (short) slot, 
-                        (byte) button, 
-                        net.minecraft.screen.slot.SlotActionType.PICKUP, 
-                        it.unimi.dsi.fastutil.ints.Int2ObjectMaps.emptyMap(),
-                        cursorHash
-                    );
-                mc.getNetworkHandler().sendPacket(packet);
+    private boolean sendClickPacket(int slot, int button) {
+        clicked = sendWindowClickNoPickup(slot, button);
+        if (!clicked) return false;
 
-                if (shouldQueueClick()) {
-                    clicked = false;
-                    return;
-                }
-
-                int initialWindowId = windowId;
-                new Thread(() -> {
-                    try {
-                        Thread.sleep(CLICK_TIMEOUT_MS);
-                        if (!inTerminal || windowId != initialWindowId) return;
-                        // Release in-flight lock if server update is delayed and continue queue.
-                        clicked = false;
-                        processQueuedClicks();
-                    } catch (InterruptedException ignored) {
-                    }
-                }).start();
-            }
-        } catch (Exception ignored) {
+        if (shouldQueueClick()) {
+            clicked = false;
+            return true;
         }
+
+        int initialWindowId = windowId;
+        new Thread(() -> {
+            try {
+                Thread.sleep(CLICK_TIMEOUT_MS);
+                if (!inTerminal || windowId != initialWindowId) return;
+                // Release in-flight lock if server update is delayed and continue queue.
+                clicked = false;
+                processQueuedClicks();
+            } catch (InterruptedException ignored) {
+            }
+        }).start();
+        return true;
     }
 
     @Override

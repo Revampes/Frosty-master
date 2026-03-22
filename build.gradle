@@ -46,6 +46,9 @@ dependencies {
 	implementation "meteordevelopment:orbit:0.2.3"
 	modImplementation 'cabaletta:baritone-api:1.2'
 	modImplementation 'com.github.cabaletta:baritone:1.2.14'
+	testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+	testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.2'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.2'
 
 	configurations.libImpl.dependencies.each {
 		implementation(it)
@@ -55,6 +58,10 @@ dependencies {
 		modImplementation(it)
 		include(it)
 	}
+}
+
+test {
+	useJUnitPlatform()
 }
 
 processResources {

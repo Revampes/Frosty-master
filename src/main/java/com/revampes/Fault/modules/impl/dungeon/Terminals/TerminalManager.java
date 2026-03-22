@@ -17,6 +17,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.item.ItemStack;
 import net.minecraft.screen.GenericContainerScreenHandler;
+import net.minecraft.screen.slot.SlotActionType;
 
 public class TerminalManager extends Module {
     private final List<AbstractTerminal> terminals = new ArrayList<>();
@@ -122,8 +123,12 @@ public class TerminalManager extends Module {
         if (!isEnabled()) return;
         if (activeTerminal == null || !activeTerminal.isInTerminal()) return;
 
-        // Handle slot click for terminal
-        if (event.slotId >= 0) {
+        if (event.slotId < 0) return;
+
+        // Block vanilla container interaction so terminal clicks do not move/pick cursor items.
+        event.setCancelled(true);
+
+        if (event.actionType == SlotActionType.PICKUP) {
             activeTerminal.onSlotClick(event.slotId, event.button);
         }
     }
@@ -183,8 +188,9 @@ public class TerminalManager extends Module {
         }
     }
 
-    public void handleSlotUpdate(int slotIndex, ItemStack itemStack) {
+    public void handleSlotUpdate(int slotIndex, int revision, ItemStack itemStack) {
         if (activeTerminal != null && activeTerminal.isInTerminal()) {
+            activeTerminal.onServerWindowUpdate(revision);
             activeTerminal.onSlotUpdate(slotIndex, itemStack);
         }
     }
