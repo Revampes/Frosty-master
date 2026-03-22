@@ -90,7 +90,7 @@ public class StartsWithTerminal extends AbstractTerminal {
             return;
         }
         
-        if (isAwaitingQueuedClickAck()) return;
+        if (isAwaitingQueuedClickAck() && !tryFallbackQueueAckRelease()) return;
         if (!canDispatchQueuedClick(true)) return;
 
         int[] next = queuedClicks.peekFirst();

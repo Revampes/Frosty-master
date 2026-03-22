@@ -100,7 +100,7 @@ public class NumbersTerminal extends AbstractTerminal {
             return;
         }
         
-        if (queueEnabled && isAwaitingQueuedClickAck()) return;
+        if (queueEnabled && isAwaitingQueuedClickAck() && !tryFallbackQueueAckRelease()) return;
         if (!canDispatchQueuedClick(queueEnabled)) {
             return;
         }

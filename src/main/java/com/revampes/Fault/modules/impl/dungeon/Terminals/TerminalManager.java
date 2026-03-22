@@ -33,8 +33,9 @@ public class TerminalManager extends Module {
     private final ButtonSetting enableRedGreen = new ButtonSetting("Red Green Terminal", true);
     private final ButtonSetting enableRubix = new ButtonSetting("Rubix Terminal", true);
     private final ButtonSetting enableStartsWith = new ButtonSetting("Starts With Terminal", true);
-    private final ButtonSetting queueClick = new ButtonSetting("Queue click", true);
+    private final ButtonSetting queueClick = new ButtonSetting("Zero Ping", true);
     private final SliderSetting queueClickDelay = new SliderSetting("Queue click delay", "ms", 200.0, 100.0, 500.0, 10.0);
+    private final SliderSetting queueClicksInAdvance = new SliderSetting("Clicks In Advance", 2.0, 0.0, 10.0, 1.0);
     private final ButtonSetting holdClick = new ButtonSetting("Hold Click", false);
     private final SliderSetting holdClickDelay = new SliderSetting("Hold Click Delay", "ms", 120.0, 50.0, 300.0, 10.0);
 
@@ -44,7 +45,7 @@ public class TerminalManager extends Module {
     private final SliderSetting renderOffsetY = new SliderSetting("Offset Y", 0, -100, 100, 1);
 
     public TerminalManager() {
-        super("Terminal Helper", category.Dungeon);
+        super("Terminals", category.Dungeon);
         initializeTerminals();
         registerSettings();
     }
@@ -67,6 +68,7 @@ public class TerminalManager extends Module {
         this.registerSetting(enableStartsWith);
         this.registerSetting(queueClick);
         this.registerSetting(queueClickDelay);
+        this.registerSetting(queueClicksInAdvance);
         this.registerSetting(holdClick);
         this.registerSetting(holdClickDelay);
         this.registerSetting(highlightColor);
@@ -236,6 +238,10 @@ public class TerminalManager extends Module {
 
     public boolean isQueueClickEnabled() {
         return queueClick.isToggled();
+    }
+
+    public int getQueueClicksInAdvance() {
+        return (int) Math.round(Math.max(0.0, queueClicksInAdvance.getInput()));
     }
 
     public boolean isHoldClickEnabled() {

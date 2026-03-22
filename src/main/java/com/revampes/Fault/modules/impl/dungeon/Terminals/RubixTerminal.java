@@ -112,7 +112,7 @@ public class RubixTerminal extends AbstractTerminal {
             return;
         }
         
-        if (queueEnabled && isAwaitingQueuedClickAck()) {
+        if (queueEnabled && isAwaitingQueuedClickAck() && !tryFallbackQueueAckRelease()) {
             return;
         }
         if (!canDispatchQueuedClick(queueEnabled)) {

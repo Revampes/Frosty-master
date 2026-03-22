@@ -2,6 +2,7 @@ package com.revampes.Fault.modules.impl.dungeon.Terminals;
 
 import com.revampes.Fault.events.impl.RenderScreenEvent;
 import com.revampes.Fault.events.impl.SlotClickEvent;
+import com.revampes.Fault.modules.ModuleManager;
 import com.revampes.Fault.utility.terminals.SlotData;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.item.ItemStack;
@@ -19,10 +20,11 @@ public abstract class AbstractTerminal {
     protected final List<SlotData> slots = new CopyOnWriteArrayList<>();
     protected final Set<Integer> solutionSlots = ConcurrentHashMap.newKeySet();
     protected long openedAt = 0;
-    private volatile boolean queueReadyForDispatch = true;
-    private volatile boolean queueAwaitingServerAck = false;
+    private volatile int queueInFlightClicks = 0;
     private volatile int lastSeenServerRevision = Integer.MIN_VALUE;
     private volatile long lastQueuedClickSentAt = 0L;
+    private volatile int optimisticQueueRevisionBase = Integer.MIN_VALUE;
+    private volatile int optimisticQueueClicksSent = 0;
     private static final long QUEUE_TIMEOUT_MS = 5000L;  // Failsafe timeout for queue stuck detection
 
     public abstract String getTerminalName();
@@ -50,20 +52,24 @@ public abstract class AbstractTerminal {
 
     public void onServerWindowUpdate(int revision) {
         if (revision != lastSeenServerRevision) {
-            lastSeenServerRevision = revision;
-            queueReadyForDispatch = true;
-            if (queueAwaitingServerAck) {
-                queueAwaitingServerAck = false;
+            int delta = lastSeenServerRevision == Integer.MIN_VALUE ? 1 : Math.max(1, revision - lastSeenServerRevision);
+            int ackCount = Math.min(queueInFlightClicks, delta);
+            for (int i = 0; i < ackCount; i++) {
                 onQueuedClickAcknowledged();
             }
+            queueInFlightClicks = Math.max(0, queueInFlightClicks - ackCount);
+            lastSeenServerRevision = revision;
+            optimisticQueueRevisionBase = revision;
+            optimisticQueueClicksSent = 0;
         }
     }
 
     protected void resetQueueDispatchState() {
-        queueReadyForDispatch = true;
-        queueAwaitingServerAck = false;
+        queueInFlightClicks = 0;
         lastSeenServerRevision = Integer.MIN_VALUE;
         lastQueuedClickSentAt = 0L;
+        optimisticQueueRevisionBase = Integer.MIN_VALUE;
+        optimisticQueueClicksSent = 0;
     }
 
     protected void recordQueuedClickSent() {
@@ -75,23 +81,71 @@ public abstract class AbstractTerminal {
         return System.currentTimeMillis() - lastQueuedClickSentAt >= QUEUE_TIMEOUT_MS;
     }
 
+    protected boolean hasQueuedDispatchIntervalElapsed() {
+        if (lastQueuedClickSentAt == 0L) {
+            return true;
+        }
+
+        long intervalMs = 200L;
+        if (ModuleManager.terminalManager != null) {
+            intervalMs = Math.max(50L, ModuleManager.terminalManager.getQueueClickBaseIntervalMs());
+        }
+
+        return System.currentTimeMillis() - lastQueuedClickSentAt >= intervalMs;
+    }
+
     protected boolean canDispatchQueuedClick(boolean queueEnabled) {
-        return !queueEnabled || queueReadyForDispatch;
+        if (!queueEnabled) {
+            return true;
+        }
+        int maxAdvance = 0;
+        if (ModuleManager.terminalManager != null) {
+            maxAdvance = ModuleManager.terminalManager.getQueueClicksInAdvance();
+        }
+        return queueInFlightClicks <= maxAdvance && hasQueuedDispatchIntervalElapsed();
     }
 
     protected void markQueuedClickDispatched(boolean queueEnabled) {
         if (queueEnabled) {
-            queueReadyForDispatch = false;
-            queueAwaitingServerAck = true;
+            queueInFlightClicks++;
         }
     }
 
     protected boolean isAwaitingQueuedClickAck() {
-        return queueAwaitingServerAck;
+        int maxAdvance = 0;
+        if (ModuleManager.terminalManager != null) {
+            maxAdvance = ModuleManager.terminalManager.getQueueClicksInAdvance();
+        }
+        return queueInFlightClicks > maxAdvance;
+    }
+
+    protected boolean tryFallbackQueueAckRelease() {
+        if (!isAwaitingQueuedClickAck()) {
+            return true;
+        }
+
+        long sentAt = lastQueuedClickSentAt;
+        if (sentAt <= 0L) {
+            return false;
+        }
+
+        long fallbackMs = 180L;
+        if (ModuleManager.terminalManager != null) {
+            fallbackMs = Math.max(50L, ModuleManager.terminalManager.getQueueClickBaseIntervalMs());
+        }
+
+        if (System.currentTimeMillis() - sentAt >= fallbackMs) {
+            queueInFlightClicks = Math.max(0, queueInFlightClicks - 1);
+            // Treat fallback timeout as a synthetic ACK so queue head advances.
+            onQueuedClickAcknowledged();
+            return true;
+        }
+
+        return false;
     }
 
     protected void clearQueuedClickAckWait() {
-        queueAwaitingServerAck = false;
+        queueInFlightClicks = 0;
     }
 
     protected void onQueuedClickAcknowledged() {
@@ -156,12 +210,22 @@ public abstract class AbstractTerminal {
                 return false;
             }
 
+            boolean queueEnabled = ModuleManager.terminalManager != null && ModuleManager.terminalManager.isQueueClickEnabled();
+            int packetRevision = handler.getRevision();
+            if (queueEnabled) {
+                if (optimisticQueueRevisionBase == Integer.MIN_VALUE) {
+                    optimisticQueueRevisionBase = Math.max(lastSeenServerRevision, packetRevision);
+                    optimisticQueueClicksSent = 0;
+                }
+                packetRevision = optimisticQueueRevisionBase + optimisticQueueClicksSent;
+            }
+
             net.minecraft.screen.sync.ComponentChangesHash.ComponentHasher hasher = component -> component.hashCode();
             net.minecraft.screen.sync.ItemStackHash emptyCursorHash = net.minecraft.screen.sync.ItemStackHash.fromItemStack(net.minecraft.item.ItemStack.EMPTY, hasher);
             net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket packet =
                 new net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket(
                     handler.syncId,
-                    handler.getRevision(),
+                    packetRevision,
                     (short) slot,
                     (byte) button,
                     net.minecraft.screen.slot.SlotActionType.PICKUP,
@@ -169,6 +233,9 @@ public abstract class AbstractTerminal {
                     emptyCursorHash
                 );
             mc.getNetworkHandler().sendPacket(packet);
+            if (queueEnabled) {
+                optimisticQueueClicksSent++;
+            }
             return true;
         } catch (Throwable ignored) {
             return false;
