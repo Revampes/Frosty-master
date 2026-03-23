@@ -16,6 +16,7 @@ import com.revampes.Fault.modules.impl.dungeon.LividESP;
 import com.revampes.Fault.modules.impl.dungeon.MobHighlight;
 import com.revampes.Fault.modules.impl.dungeon.SecretClick;
 import com.revampes.Fault.modules.impl.dungeon.ThornStun;
+import com.revampes.Fault.modules.impl.dungeon.AutoTerminals.AutoTerminals;
 import com.revampes.Fault.modules.impl.dungeon.Terminals.TerminalManager;
 import com.revampes.Fault.modules.impl.farming.GardenCleaner;
 import com.revampes.Fault.modules.impl.fishing.AutoFish;
@@ -142,6 +143,7 @@ public class ModuleManager {
     public static KeyHighlight keyHighlight;
     public static SlotBinds slotBinds;
     public static TerminalManager terminalManager;
+    public static AutoTerminals autoTerminals;
 
     public void register() {
         this.addModule(tps = new TPS());
@@ -197,8 +199,8 @@ public class ModuleManager {
         this.addModule(blockAnimation = new BlockAnimation());
         this.addModule(autoPetNotification = new AutoPetNotification());
         this.addModule(ragnarockTimer = new RagnarockTimer());
-        this.addModule(lifeSaverTimer = new com.revampes.Fault.modules.impl.other.LifeSaverTimer());
-        this.addModule(panelCommand = new com.revampes.Fault.modules.impl.other.PanelCommand());
+        this.addModule(lifeSaverTimer = new LifeSaverTimer());
+        this.addModule(panelCommand = new PanelCommand());
         this.addModule(AutoSellModule = new AutoSellModule());
         this.addModule(secretClick = new SecretClick());
         this.addModule(lividESP = new LividESP());
@@ -213,6 +215,7 @@ public class ModuleManager {
         this.addModule(keyHighlight = new KeyHighlight());
         this.addModule(slotBinds = new SlotBinds());
         this.addModule(terminalManager = new TerminalManager());
+        this.addModule(autoTerminals = new AutoTerminals());
         modules.sort(Comparator.comparing(Module::getName));
     }
 
