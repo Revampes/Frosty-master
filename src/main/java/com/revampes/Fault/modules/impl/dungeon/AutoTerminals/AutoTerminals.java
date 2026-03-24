@@ -348,7 +348,8 @@ public class AutoTerminals extends Module {
         int limit = Math.min(stacks.size(), 54);
         for (int i = 0; i < limit; i++) {
             ItemStack stack = stacks.get(i);
-            if (stack.isEmpty()) continue;
+            // START terminal marks solved picks with glint; skip them to avoid re-click loops.
+            if (stack.isEmpty() || stack.hasGlint()) continue;
 
             String name = stripFormatting(stack.getName().getString()).trim();
             if (!name.isEmpty() && Character.toLowerCase(name.charAt(0)) == startChar) {
