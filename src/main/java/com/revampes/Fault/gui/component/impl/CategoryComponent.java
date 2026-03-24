@@ -2,6 +2,7 @@ package com.revampes.Fault.gui.component.impl;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.text.Text;
+import net.minecraft.util.math.MathHelper;
 import com.revampes.Fault.gui.component.Component;
 import com.revampes.Fault.modules.Module;
 import com.revampes.Fault.modules.ModuleManager;
@@ -13,6 +14,7 @@ import static com.revampes.Fault.Revampes.mc;
 public class CategoryComponent extends Component {
     private final Module.category category;
     private boolean selected;
+    private float hoverAnimation = 0.0f;
 
     public CategoryComponent(Module.category category, float x, float y, float width, float height, boolean selected) {
         super(x, y, width, height);
@@ -23,11 +25,14 @@ public class CategoryComponent extends Component {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         isHovered = isHovered(mouseX, mouseY);
-        boolean isLight = ModuleManager.ui.clickGuiColor.getValue() == 0;
+        hoverAnimation = MathHelper.lerp(0.22f, hoverAnimation, isHovered ? 1.0f : 0.0f);
+
+        boolean isLight = ModuleManager.ui.isLightTheme();
 
         int color;
         if (selected) {
-            color = isLight ? new Color(100, 100, 255).getRGB() : new Color(60, 60, 180).getRGB();
+            color = ModuleManager.ui.useCustomColors() ? ModuleManager.ui.accentColor.getRGB()
+                    : (isLight ? new Color(100, 100, 255).getRGB() : new Color(60, 60, 180).getRGB());
         } else if (isHovered) {
             color = isLight ? new Color(200, 200, 200).getRGB() : new Color(120, 120, 120).getRGB();
         } else {
@@ -35,6 +40,8 @@ public class CategoryComponent extends Component {
         }
 
         context.fill((int) x, (int) y, (int) (x + width), (int) (y + height), color);
+        int hoverOverlay = ((int) (MathHelper.clamp(hoverAnimation, 0.0f, 1.0f) * 35.0f) << 24) | 0x00FFFFFF;
+        context.fill((int) x, (int) y, (int) (x + width), (int) (y + height), hoverOverlay);
         context.drawText(mc.textRenderer, Text.literal(category.name()), (int) (x + width / 2 - mc.textRenderer.getWidth(category.name()) / 2),
                 (int) (y + height / 2 - 4), isLight ? Color.BLACK.getRGB() : Color.WHITE.getRGB(), false);
     }
