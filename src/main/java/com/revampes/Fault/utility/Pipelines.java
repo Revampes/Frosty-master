@@ -13,7 +13,7 @@ public class Pipelines {
     public static final RenderPipeline GLOBAL_QUADS_PIPELINE = RenderPipeline.builder(POSITION_COLOR_SNIPPET)
             .withLocation("pipeline/global_fill_pipeline")
             .withVertexFormat(VertexFormats.POSITION_COLOR, VertexFormat.DrawMode.QUADS)
-            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+            .withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withDepthWrite(false)
             .withCull(false)
@@ -21,7 +21,7 @@ public class Pipelines {
 
     public static final RenderPipeline GLOBAL_LINES_PIPELINE = RenderPipeline.builder(RENDERTYPE_LINES_SNIPPET)
             .withLocation("pipeline/global_lines_pipeline")
-            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+            .withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST)
             .withBlend(BlendFunction.TRANSLUCENT)
             .withDepthWrite(false)
             .withCull(false)

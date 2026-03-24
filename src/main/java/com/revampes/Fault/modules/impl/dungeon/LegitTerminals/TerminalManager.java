@@ -1,7 +1,9 @@
 package com.revampes.Fault.modules.impl.dungeon.Terminals;
 
 import java.awt.Color;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -24,6 +26,8 @@ public class TerminalManager extends Module {
     private AbstractTerminal activeTerminal = null;
     private long lastContainerSyncAt = 0L;
     private long lastQueueClickSentAt = -1L;
+    private final Deque<int[]> userClickQueue = new ArrayDeque<>();
+    private static final int MAX_USER_CLICK_QUEUE = 128;
     private static final long CONTAINER_SYNC_INTERVAL_MS = 80L;
 
     // Settings
@@ -91,6 +95,8 @@ public class TerminalManager extends Module {
                 syncActiveTerminalFromHandler(handler);
                 lastContainerSyncAt = now;
             }
+
+            flushUserClickQueue();
         }
 
         // Render active terminal if any
@@ -131,7 +137,7 @@ public class TerminalManager extends Module {
         event.setCancelled(true);
 
         if (event.actionType == SlotActionType.PICKUP) {
-            activeTerminal.onSlotClick(event.slotId, event.button);
+            enqueueUserClick(event.slotId, event.button);
         }
     }
 
@@ -145,6 +151,7 @@ public class TerminalManager extends Module {
                     activeTerminal = terminal;
                     activeTerminal.onWindowOpen(windowTitle, windowId, slotCount);
                     lastContainerSyncAt = 0L;
+                    userClickQueue.clear();
                     // Slot reading will happen after delay in the mixin
                     return;
                 }
@@ -158,6 +165,7 @@ public class TerminalManager extends Module {
             activeTerminal = null;
         }
         lastContainerSyncAt = 0L;
+        userClickQueue.clear();
     }
 
     private void syncActiveTerminalFromHandler(GenericContainerScreenHandler handler) {
@@ -186,7 +194,7 @@ public class TerminalManager extends Module {
 
     public void handleTerminalClick(int slot, int button) {
         if (activeTerminal != null && activeTerminal.isInTerminal()) {
-            activeTerminal.onSlotClick(slot, button);
+            enqueueUserClick(slot, button);
         }
     }
 
@@ -199,7 +207,42 @@ public class TerminalManager extends Module {
 
     public void handleSlotClick(int slotIndex, int button) {
         if (activeTerminal != null && activeTerminal.isInTerminal()) {
-            activeTerminal.onSlotClick(slotIndex, button);
+            enqueueUserClick(slotIndex, button);
+        }
+    }
+
+    private void enqueueUserClick(int slot, int button) {
+        if (activeTerminal == null || !activeTerminal.isInTerminal()) {
+            return;
+        }
+
+        int normalizedButton = button == 0 ? 0 : 1;
+        if (!isQueueClickEnabled()) {
+            activeTerminal.onSlotClick(slot, normalizedButton);
+            return;
+        }
+
+        if (userClickQueue.size() >= MAX_USER_CLICK_QUEUE) {
+            userClickQueue.pollFirst();
+        }
+        userClickQueue.addLast(new int[]{slot, normalizedButton});
+        flushUserClickQueue();
+    }
+
+    private void flushUserClickQueue() {
+        if (activeTerminal == null || !activeTerminal.isInTerminal()) {
+            userClickQueue.clear();
+            return;
+        }
+
+        // Push a small burst each frame; terminal-level queueing/acks handles send pacing.
+        int burst = Math.min(6, userClickQueue.size());
+        for (int i = 0; i < burst; i++) {
+            int[] click = userClickQueue.pollFirst();
+            if (click == null) {
+                break;
+            }
+            activeTerminal.onSlotClick(click[0], click[1]);
         }
     }
 

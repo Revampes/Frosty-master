@@ -145,7 +145,7 @@ public final class FancyDamageRenderer {
             }
         }
 
-        Vec3d cameraPos = MC.getEntityRenderDispatcher().camera.getPos();
+        Vec3d cameraPos = MC.getEntityRenderDispatcher().camera.getCameraPos();
         double x = currentPos.x - cameraPos.x;
         double y = currentPos.y - cameraPos.y;
         double z = currentPos.z - cameraPos.z;
@@ -156,8 +156,8 @@ public final class FancyDamageRenderer {
         matrices.push();
         matrices.translate(x, y, z);
 
-        float yaw = MC.getEntityRenderDispatcher().camera.getYaw();
-        float pitch = MC.getEntityRenderDispatcher().camera.getPitch();
+        float yaw = MC.player.getYaw();
+        float pitch = MC.player.getPitch();
         matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-yaw));
         matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(pitch));
         matrices.scale(-finalScale, -finalScale, finalScale);

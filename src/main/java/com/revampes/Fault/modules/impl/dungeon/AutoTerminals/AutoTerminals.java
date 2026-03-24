@@ -40,6 +40,7 @@ public class AutoTerminals extends Module {
     private final ButtonSetting onlyInDungeon = new ButtonSetting("Only In Dungeon", true);
     private final ButtonSetting pauseWhenLegitTerminals = new ButtonSetting("Pause When Terminals Enabled", true);
     private final ButtonSetting zeroPing = new ButtonSetting("Zero Ping", false);
+    private final SliderSetting firstClickDelayMs = new SliderSetting("First click delay", "ms", 500.0, 0.0, 1500.0, 25.0);
     private final SliderSetting clickDelayMs = new SliderSetting("Click Delay", "ms", 120.0, 40.0, 400.0, 5.0);
     private final SliderSetting clicksInAdvance = new SliderSetting("Clicks In Advance", 2.0, 0.0, 10.0, 1.0);
     private final SliderSetting clickButton = new SliderSetting("Click Button", 0.0, 0.0, 2.0, 1.0);
@@ -72,6 +73,8 @@ public class AutoTerminals extends Module {
     private String lastMelodySignature = "";
     private long lastStartDebugAt = 0L;
     private long lastColorPadDebugAt = 0L;
+    private long terminalOpenedAt = 0L;
+    private boolean firstClickPending = true;
 
     public AutoTerminals() {
         super("AutoTerminals", category.Dungeon);
@@ -79,6 +82,7 @@ public class AutoTerminals extends Module {
         this.registerSetting(onlyInDungeon);
         this.registerSetting(pauseWhenLegitTerminals);
         this.registerSetting(zeroPing);
+        this.registerSetting(firstClickDelayMs);
         this.registerSetting(clickDelayMs);
         this.registerSetting(clicksInAdvance);
         this.registerSetting(clickButton);
@@ -169,10 +173,19 @@ public class AutoTerminals extends Module {
     }
 
     private void openTerminal(TerminalType newType, String title, int syncId, int windowSize) {
+        String oldTitle = stripFormatting(currentTitle);
+        String newTitle = stripFormatting(title == null ? "" : title);
+        boolean sameSession = terminalType == newType && oldTitle.equalsIgnoreCase(newTitle);
+
         terminalType = newType;
         currentTitle = title == null ? "" : title;
         activeSyncId = syncId;
         activeWindowSize = windowSize;
+        if (!sameSession) {
+            terminalOpenedAt = System.currentTimeMillis();
+            firstClickPending = true;
+            lastClickAt = 0L;
+        }
         optimisticClicksSent = 0;
         lastSeenRevision = Integer.MIN_VALUE;
         lastRevisionSeenAt = 0L;
@@ -208,10 +221,13 @@ public class AutoTerminals extends Module {
         optimisticClicksSent = 0;
         lastSeenRevision = Integer.MIN_VALUE;
         lastRevisionSeenAt = 0L;
+        lastClickAt = 0L;
         recalculate = false;
         awaitingStateUpdate = false;
         awaitStateSince = 0L;
         lastMelodySignature = "";
+        terminalOpenedAt = 0L;
+        firstClickPending = true;
     }
 
     private TerminalType detectTerminalType(String title) {
@@ -474,6 +490,13 @@ public class AutoTerminals extends Module {
         if (clickQueue.isEmpty()) return;
 
         long now = System.currentTimeMillis();
+        if (firstClickPending) {
+            long firstDelay = Math.max(0L, Math.round(firstClickDelayMs.getInput()));
+            if (terminalOpenedAt > 0L && now - terminalOpenedAt < firstDelay) {
+                return;
+            }
+        }
+
         long delay = Math.max(20L, Math.round(clickDelayMs.getInput()));
         if (now - lastClickAt < delay) return;
 
@@ -498,6 +521,7 @@ public class AutoTerminals extends Module {
         }
         if (sendClick(handler, slot, button)) {
             lastClickAt = now;
+            firstClickPending = false;
             clickQueue.pollFirst();
             awaitingStateUpdate = true;
             awaitStateSince = now;

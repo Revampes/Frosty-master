@@ -116,46 +116,53 @@ public class RenderUtils {
 
     // 3d
     public static void drawBoxFilled(MatrixStack stack, Box box, Color c) {
-        float minX = (float) (box.minX - mc.getEntityRenderDispatcher().camera.getPos().getX());
-        float minY = (float) (box.minY - mc.getEntityRenderDispatcher().camera.getPos().getY());
-        float minZ = (float) (box.minZ - mc.getEntityRenderDispatcher().camera.getPos().getZ());
-        float maxX = (float) (box.maxX - mc.getEntityRenderDispatcher().camera.getPos().getX());
-        float maxY = (float) (box.maxY - mc.getEntityRenderDispatcher().camera.getPos().getY());
-        float maxZ = (float) (box.maxZ - mc.getEntityRenderDispatcher().camera.getPos().getZ());
+        beginThroughWallRender();
+        try {
+        float minX = (float) (box.minX - mc.getEntityRenderDispatcher().camera.getCameraPos().x);
+        float minY = (float) (box.minY - mc.getEntityRenderDispatcher().camera.getCameraPos().y);
+        float minZ = (float) (box.minZ - mc.getEntityRenderDispatcher().camera.getCameraPos().z);
+        float maxX = (float) (box.maxX - mc.getEntityRenderDispatcher().camera.getCameraPos().x);
+        float maxY = (float) (box.maxY - mc.getEntityRenderDispatcher().camera.getCameraPos().y);
+        float maxZ = (float) (box.maxZ - mc.getEntityRenderDispatcher().camera.getCameraPos().z);
 
-        BufferBuilder bufferBuilder = Tessellator.getInstance()
-                .begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), minX, minY, minZ).color(c.getRGB());
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), maxX, minY, minZ).color(c.getRGB());
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), maxX, minY, maxZ).color(c.getRGB());
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), minX, minY, maxZ).color(c.getRGB());
+        VertexConsumerProvider.Immediate immediate = mc.getBufferBuilders().getEntityVertexConsumers();
+        VertexConsumer vertexConsumer = immediate.getBuffer(RenderLayers.debugFilledBox());
+        MatrixStack.Entry entry = stack.peek();
 
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), minX, maxY, minZ).color(c.getRGB());
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), minX, maxY, maxZ).color(c.getRGB());
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), maxX, maxY, maxZ).color(c.getRGB());
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), maxX, maxY, minZ).color(c.getRGB());
+        vertexConsumer.vertex(entry, minX, minY, minZ).color(c.getRGB());
+        vertexConsumer.vertex(entry, maxX, minY, minZ).color(c.getRGB());
+        vertexConsumer.vertex(entry, maxX, minY, maxZ).color(c.getRGB());
+        vertexConsumer.vertex(entry, minX, minY, maxZ).color(c.getRGB());
 
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), minX, minY, minZ).color(c.getRGB());
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), minX, maxY, minZ).color(c.getRGB());
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), maxX, maxY, minZ).color(c.getRGB());
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), maxX, minY, minZ).color(c.getRGB());
+        vertexConsumer.vertex(entry, minX, maxY, minZ).color(c.getRGB());
+        vertexConsumer.vertex(entry, minX, maxY, maxZ).color(c.getRGB());
+        vertexConsumer.vertex(entry, maxX, maxY, maxZ).color(c.getRGB());
+        vertexConsumer.vertex(entry, maxX, maxY, minZ).color(c.getRGB());
 
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), maxX, minY, minZ).color(c.getRGB());
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), maxX, maxY, minZ).color(c.getRGB());
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), maxX, maxY, maxZ).color(c.getRGB());
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), maxX, minY, maxZ).color(c.getRGB());
+        vertexConsumer.vertex(entry, minX, minY, minZ).color(c.getRGB());
+        vertexConsumer.vertex(entry, minX, maxY, minZ).color(c.getRGB());
+        vertexConsumer.vertex(entry, maxX, maxY, minZ).color(c.getRGB());
+        vertexConsumer.vertex(entry, maxX, minY, minZ).color(c.getRGB());
 
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), minX, minY, maxZ).color(c.getRGB());
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), maxX, minY, maxZ).color(c.getRGB());
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), maxX, maxY, maxZ).color(c.getRGB());
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), minX, maxY, maxZ).color(c.getRGB());
+        vertexConsumer.vertex(entry, maxX, minY, minZ).color(c.getRGB());
+        vertexConsumer.vertex(entry, maxX, maxY, minZ).color(c.getRGB());
+        vertexConsumer.vertex(entry, maxX, maxY, maxZ).color(c.getRGB());
+        vertexConsumer.vertex(entry, maxX, minY, maxZ).color(c.getRGB());
 
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), minX, minY, minZ).color(c.getRGB());
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), minX, minY, maxZ).color(c.getRGB());
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), minX, maxY, maxZ).color(c.getRGB());
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), minX, maxY, minZ).color(c.getRGB());
+        vertexConsumer.vertex(entry, minX, minY, maxZ).color(c.getRGB());
+        vertexConsumer.vertex(entry, maxX, minY, maxZ).color(c.getRGB());
+        vertexConsumer.vertex(entry, maxX, maxY, maxZ).color(c.getRGB());
+        vertexConsumer.vertex(entry, minX, maxY, maxZ).color(c.getRGB());
 
-        Layers.getGlobalQuads().draw(bufferBuilder.end());
+        vertexConsumer.vertex(entry, minX, minY, minZ).color(c.getRGB());
+        vertexConsumer.vertex(entry, minX, minY, maxZ).color(c.getRGB());
+        vertexConsumer.vertex(entry, minX, maxY, maxZ).color(c.getRGB());
+        vertexConsumer.vertex(entry, minX, maxY, minZ).color(c.getRGB());
+
+        immediate.draw();
+        } finally {
+            endThroughWallRender();
+        }
     }
 
     public static void drawBoxFilled(MatrixStack stack, Vec3d vec, Color c) {
@@ -167,20 +174,63 @@ public class RenderUtils {
     }
 
     public static void drawBox(MatrixStack stack, Box box, Color c, double lineWidth) {
-        float minX = (float) (box.minX - mc.getEntityRenderDispatcher().camera.getPos().getX());
-        float minY = (float) (box.minY - mc.getEntityRenderDispatcher().camera.getPos().getY());
-        float minZ = (float) (box.minZ - mc.getEntityRenderDispatcher().camera.getPos().getZ());
-        float maxX = (float) (box.maxX - mc.getEntityRenderDispatcher().camera.getPos().getX());
-        float maxY = (float) (box.maxY - mc.getEntityRenderDispatcher().camera.getPos().getY());
-        float maxZ = (float) (box.maxZ - mc.getEntityRenderDispatcher().camera.getPos().getZ());
+        beginThroughWallRender();
+        try {
+        float minX = (float) (box.minX - mc.getEntityRenderDispatcher().camera.getCameraPos().x);
+        float minY = (float) (box.minY - mc.getEntityRenderDispatcher().camera.getCameraPos().y);
+        float minZ = (float) (box.minZ - mc.getEntityRenderDispatcher().camera.getCameraPos().z);
+        float maxX = (float) (box.maxX - mc.getEntityRenderDispatcher().camera.getCameraPos().x);
+        float maxY = (float) (box.maxY - mc.getEntityRenderDispatcher().camera.getCameraPos().y);
+        float maxZ = (float) (box.maxZ - mc.getEntityRenderDispatcher().camera.getCameraPos().z);
 
-        BufferBuilder bufferBuilder = Tessellator.getInstance()
-                .begin(VertexFormat.DrawMode.LINES, VertexFormats.POSITION_COLOR_NORMAL);
+        VertexConsumerProvider.Immediate immediate = mc.getBufferBuilders().getEntityVertexConsumers();
+        VertexConsumer vertexConsumer = immediate.getBuffer(RenderLayers.linesTranslucent());
+        MatrixStack.Entry entry = stack.peek();
+        
+        float r = c.getRed() / 255f;
+        float g = c.getGreen() / 255f;
+        float b = c.getBlue() / 255f;
+        float a = c.getAlpha() / 255f;
+        
+        // Draw box outline - 12 edges
+        // Bottom face
+        drawLine(vertexConsumer, entry, minX, minY, minZ, maxX, minY, minZ, r, g, b, a, (float) lineWidth);
+        drawLine(vertexConsumer, entry, maxX, minY, minZ, maxX, minY, maxZ, r, g, b, a, (float) lineWidth);
+        drawLine(vertexConsumer, entry, maxX, minY, maxZ, minX, minY, maxZ, r, g, b, a, (float) lineWidth);
+        drawLine(vertexConsumer, entry, minX, minY, maxZ, minX, minY, minZ, r, g, b, a, (float) lineWidth);
+        
+        // Top face
+        drawLine(vertexConsumer, entry, minX, maxY, minZ, maxX, maxY, minZ, r, g, b, a, (float) lineWidth);
+        drawLine(vertexConsumer, entry, maxX, maxY, minZ, maxX, maxY, maxZ, r, g, b, a, (float) lineWidth);
+        drawLine(vertexConsumer, entry, maxX, maxY, maxZ, minX, maxY, maxZ, r, g, b, a, (float) lineWidth);
+        drawLine(vertexConsumer, entry, minX, maxY, maxZ, minX, maxY, minZ, r, g, b, a, (float) lineWidth);
+        
+        // Vertical edges
+        drawLine(vertexConsumer, entry, minX, minY, minZ, minX, maxY, minZ, r, g, b, a, (float) lineWidth);
+        drawLine(vertexConsumer, entry, maxX, minY, minZ, maxX, maxY, minZ, r, g, b, a, (float) lineWidth);
+        drawLine(vertexConsumer, entry, maxX, minY, maxZ, maxX, maxY, maxZ, r, g, b, a, (float) lineWidth);
+        drawLine(vertexConsumer, entry, minX, minY, maxZ, minX, maxY, maxZ, r, g, b, a, (float) lineWidth);
 
-        VertexRendering.drawBox(stack.peek(), bufferBuilder, minX, minY, minZ, maxX, maxY, maxZ,
-                c.getRed() / 255f, c.getGreen() / 255f, c.getBlue() / 255f, c.getAlpha() / 255f);
-
-        Layers.getGlobalLines(lineWidth).draw(bufferBuilder.end());
+        immediate.draw();
+        } finally {
+            endThroughWallRender();
+        }
+    }
+    
+    private static void drawLine(VertexConsumer builder, MatrixStack.Entry entry, 
+            float x1, float y1, float z1, float x2, float y2, float z2, 
+            float r, float g, float b, float a, float lineWidth) {
+        float dx = x2 - x1;
+        float dy = y2 - y1;
+        float dz = z2 - z1;
+        float length = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (length > 0) {
+            dx /= length;
+            dy /= length;
+            dz /= length;
+        }
+        builder.vertex(entry, x1, y1, z1).color(r, g, b, a).normal(entry, dx, dy, dz).lineWidth(lineWidth);
+        builder.vertex(entry, x2, y2, z2).color(r, g, b, a).normal(entry, dx, dy, dz).lineWidth(lineWidth);
     }
 
     public static void drawBox(MatrixStack stack, Vec3d vec, Color c, double lineWidth) {
@@ -192,15 +242,17 @@ public class RenderUtils {
     }
 
     public static void drawLine(MatrixStack stack, Vec3d start, Vec3d end, Color c, double lineWidth) {
-        float minX = (float) (start.x - mc.getEntityRenderDispatcher().camera.getPos().getX());
-        float minY = (float) (start.y - mc.getEntityRenderDispatcher().camera.getPos().getY());
-        float minZ = (float) (start.z - mc.getEntityRenderDispatcher().camera.getPos().getZ());
-        float maxX = (float) (end.x - mc.getEntityRenderDispatcher().camera.getPos().getX());
-        float maxY = (float) (end.y - mc.getEntityRenderDispatcher().camera.getPos().getY());
-        float maxZ = (float) (end.z - mc.getEntityRenderDispatcher().camera.getPos().getZ());
+        beginThroughWallRender();
+        try {
+        float minX = (float) (start.x - mc.getEntityRenderDispatcher().camera.getCameraPos().x);
+        float minY = (float) (start.y - mc.getEntityRenderDispatcher().camera.getCameraPos().y);
+        float minZ = (float) (start.z - mc.getEntityRenderDispatcher().camera.getCameraPos().z);
+        float maxX = (float) (end.x - mc.getEntityRenderDispatcher().camera.getCameraPos().x);
+        float maxY = (float) (end.y - mc.getEntityRenderDispatcher().camera.getCameraPos().y);
+        float maxZ = (float) (end.z - mc.getEntityRenderDispatcher().camera.getCameraPos().z);
 
-        BufferBuilder bufferBuilder = Tessellator.getInstance()
-                .begin(VertexFormat.DrawMode.LINES, VertexFormats.POSITION_COLOR_NORMAL);
+        VertexConsumerProvider.Immediate immediate = mc.getBufferBuilders().getEntityVertexConsumers();
+        VertexConsumer bufferBuilder = immediate.getBuffer(RenderLayers.linesTranslucent());
 
         float dx = maxX - minX;
         float dy = maxY - minY;
@@ -210,15 +262,30 @@ public class RenderUtils {
         dy /= dist;
         dz /= dist;
 
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), minX, minY, minZ)
-            .color(c.getRed() / 255f, c.getGreen() / 255f, c.getBlue() / 255f, c.getAlpha() / 255f)
-            .normal(stack.peek(), dx, dy, dz);
+        MatrixStack.Entry entry = stack.peek();
 
-        bufferBuilder.vertex(stack.peek().getPositionMatrix(), maxX, maxY, maxZ)
+        bufferBuilder.vertex(entry, minX, minY, minZ)
             .color(c.getRed() / 255f, c.getGreen() / 255f, c.getBlue() / 255f, c.getAlpha() / 255f)
-            .normal(stack.peek(), dx, dy, dz);
+            .normal(entry, dx, dy, dz)
+            .lineWidth((float) lineWidth);
 
-        Layers.getGlobalLines(lineWidth).draw(bufferBuilder.end());
+        bufferBuilder.vertex(entry, maxX, maxY, maxZ)
+            .color(c.getRed() / 255f, c.getGreen() / 255f, c.getBlue() / 255f, c.getAlpha() / 255f)
+            .normal(entry, dx, dy, dz)
+            .lineWidth((float) lineWidth);
+
+        immediate.draw();
+        } finally {
+            endThroughWallRender();
+        }
+    }
+
+    private static void beginThroughWallRender() {
+        GL11.glDisable(GL11.GL_DEPTH_TEST);
+    }
+
+    private static void endThroughWallRender() {
+        GL11.glEnable(GL11.GL_DEPTH_TEST);
     }
 
     public static void drawHighlight(MatrixStack stack, Box box, Color fillColor, Color outlineColor, boolean throughWalls, String mode) {
@@ -287,9 +354,9 @@ public class RenderUtils {
         Camera camera = mc.getEntityRenderDispatcher().camera;
         if (camera == null) return;
         
-        double x = pos.x - camera.getPos().x;
-        double y = pos.y - camera.getPos().y;
-        double z = pos.z - camera.getPos().z;
+        double x = pos.x - camera.getCameraPos().x;
+        double y = pos.y - camera.getCameraPos().y;
+        double z = pos.z - camera.getCameraPos().z;
 
         stack.push();
         stack.translate(x, y, z);

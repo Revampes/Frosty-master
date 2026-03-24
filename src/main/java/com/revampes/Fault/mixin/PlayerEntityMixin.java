@@ -14,7 +14,7 @@ import static com.revampes.Fault.Revampes.mc;
 
 @Mixin(PlayerEntity.class)
 public class PlayerEntityMixin {
-    @ModifyExpressionValue(method = "attack", at = @At(value = "INVOKE", target = "Lnet/minecraft/entity/player/PlayerEntity;getYaw()F"))
+    @ModifyExpressionValue(method = "knockbackTarget", at = @At(value = "INVOKE", target = "Lnet/minecraft/entity/player/PlayerEntity;getYaw()F"))
     private float hookFixRotation(float original) {
         if ((Object) this != mc.player) {
             return original;
@@ -28,7 +28,7 @@ public class PlayerEntityMixin {
     }
 
     @SuppressWarnings({"UnreachableCode", "ConstantValue"})
-    @Redirect(method = "attack", at = @At(value = "INVOKE", target = "Lnet/minecraft/util/math/Vec3d;multiply(DDD)Lnet/minecraft/util/math/Vec3d;"))
+    @Redirect(method = "knockbackTarget", at = @At(value = "INVOKE", target = "Lnet/minecraft/util/math/Vec3d;multiply(DDD)Lnet/minecraft/util/math/Vec3d;"))
     private Vec3d hookSlowVelocity(Vec3d instance, double x, double y, double z) {
         if ((Object) this == mc.player && ModuleManager.sprint.isEnabled() && ModuleManager.sprint.keep.isToggled()) {
             x = z = (100 - ModuleManager.sprint.slow.getInput()) / 100;
