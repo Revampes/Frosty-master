@@ -35,7 +35,7 @@ public class LifeSaverTimer extends Module {
     public long[] availableTimestamp = new long[LifeSavers.values().length];
 
     public LifeSaverTimer() {
-        super("LifeSaverTimer", category.Other);
+        super("LifeSaverTimer", category.Dungeon);
         this.registerSetting(xPos);
         this.registerSetting(yPos);
     }

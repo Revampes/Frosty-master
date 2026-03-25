@@ -36,7 +36,7 @@ public class Hideonleaf extends Module {
     private ColorSetting lineColor;
 
     public Hideonleaf() {
-        super("Shulkers", category.Hunting);
+        super("Shulkers", category.Foraging);
 
         this.registerSetting(esp = new ButtonSetting("ESP", true));
         this.registerSetting(drawLine = new ButtonSetting("Draw Line", true));

@@ -148,6 +148,21 @@ public class TerminalManager extends Module {
             if (terminal.matches(windowTitle)) {
                 matched = true;
                 if (isTerminalEnabled(terminal.getTerminalName())) {
+                    // Server/container sync can recreate the same screen while the puzzle is still active.
+                    // Keep queue state intact when this is the same terminal window reopening.
+                    if (activeTerminal != null
+                        && activeTerminal == terminal
+                        && activeTerminal.isInTerminal()
+                        && activeTerminal.getWindowId() == windowId) {
+                        activeTerminal.setWindowSize(slotCount);
+                        lastContainerSyncAt = 0L;
+                        return;
+                    }
+
+                    if (activeTerminal != null && activeTerminal != terminal && activeTerminal.isInTerminal()) {
+                        activeTerminal.onWindowClose();
+                    }
+
                     activeTerminal = terminal;
                     activeTerminal.onWindowOpen(windowTitle, windowId, slotCount);
                     lastContainerSyncAt = 0L;

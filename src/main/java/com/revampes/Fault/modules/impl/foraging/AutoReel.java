@@ -21,7 +21,7 @@ public class AutoReel extends Module {
     private int tickCD;
 
     public AutoReel() {
-        super("AutoReel", category.Hunting);
+        super("AutoReel", category.Foraging);
     }
 
     @EventHandler

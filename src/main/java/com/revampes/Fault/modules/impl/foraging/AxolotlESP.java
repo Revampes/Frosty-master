@@ -16,7 +16,7 @@ import java.awt.Color;
 public class AxolotlESP extends Module {
 
     public AxolotlESP() {
-        super("AxolotlESP", category.Render);
+        super("AxolotlESP", category.Foraging);
     }
 
     @EventHandler
