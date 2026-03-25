@@ -16,6 +16,7 @@ import com.revampes.Fault.modules.impl.dungeon.LividESP;
 import com.revampes.Fault.modules.impl.dungeon.MobHighlight;
 import com.revampes.Fault.modules.impl.dungeon.SecretClick;
 import com.revampes.Fault.modules.impl.dungeon.ThornStun;
+import com.revampes.Fault.modules.impl.dungeon.DungeonMap.DungeonMap;
 import com.revampes.Fault.modules.impl.dungeon.AutoTerminals.AutoTerminals;
 import com.revampes.Fault.modules.impl.dungeon.Terminals.TerminalManager;
 import com.revampes.Fault.modules.impl.farming.GardenCleaner;
@@ -144,6 +145,7 @@ public class ModuleManager {
     public static SlotBinds slotBinds;
     public static TerminalManager terminalManager;
     public static AutoTerminals autoTerminals;
+    public static DungeonMap dungeonMap;
 
     public void register() {
         this.addModule(tps = new TPS());
@@ -216,6 +218,7 @@ public class ModuleManager {
         this.addModule(slotBinds = new SlotBinds());
         this.addModule(terminalManager = new TerminalManager());
         this.addModule(autoTerminals = new AutoTerminals());
+        this.addModule(dungeonMap = new DungeonMap());
         modules.sort(Comparator.comparing(Module::getName));
     }
 

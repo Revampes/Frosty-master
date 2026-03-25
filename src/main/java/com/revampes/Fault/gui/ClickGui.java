@@ -98,6 +98,16 @@ public class ClickGui extends Screen {
             totalModuleHeight += component.getExpandedTotalHeight();
         }
 
+        refreshScrollBounds();
+    }
+
+    private void refreshScrollBounds() {
+        float computedTotalHeight = 0f;
+        for (ModuleComponent component : moduleComponents) {
+            computedTotalHeight += component.getExpandedTotalHeight();
+        }
+        totalModuleHeight = computedTotalHeight;
+
         float maxScroll = Math.max(0, totalModuleHeight - (height - 30));
         scrollOffset = MathHelper.clamp(scrollOffset, 0, maxScroll);
     }
@@ -208,6 +218,7 @@ public class ClickGui extends Screen {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         syncLayoutFromSettings();
+        refreshScrollBounds();
         int accentColor = getAccentColor();
 
         // Draw GUI bg
@@ -310,13 +321,12 @@ public class ClickGui extends Screen {
         if (mouseX >= x + 75 && mouseX <= x + width - 5 &&
                 mouseY >= y + 25 && mouseY <= y + height - 5) {
 
-            updateModuleComponents();
+            refreshScrollBounds();
 
             float scrollSpeed = 15f;
             scrollOffset -= verticalAmount * scrollSpeed;
 
-            float maxScroll = Math.max(0, totalModuleHeight - (height - 30));
-            scrollOffset = MathHelper.clamp(scrollOffset, 0, maxScroll);
+            refreshScrollBounds();
 
             return true;
         }
@@ -435,6 +445,7 @@ public class ClickGui extends Screen {
                 float clickBottom = Math.min(currentModuleY + component.getTotalHeight(), renderBottom);
                 if (mouseY >= clickTop && mouseY <= clickBottom) {
                     component.mouseClicked(mouseX, mouseY, button);
+                    refreshScrollBounds();
                     clearFocusedInput();
                     playClickSound();
                     return true;
