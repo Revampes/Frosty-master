@@ -51,6 +51,7 @@ import com.revampes.Fault.modules.impl.other.NoPlaceInteract;
 import com.revampes.Fault.modules.impl.other.PanelCommand;
 import com.revampes.Fault.modules.impl.other.RagnarockTimer;
 import com.revampes.Fault.modules.impl.other.SlotBinds;
+import com.revampes.Fault.modules.impl.other.HotbarSwap;
 import com.revampes.Fault.modules.impl.render.AntiDebuff;
 import com.revampes.Fault.modules.impl.render.ArmorHider;
 import com.revampes.Fault.modules.impl.render.AxolotlESP;
@@ -143,6 +144,7 @@ public class ModuleManager {
     public static CrateAura crateAura;
     public static KeyHighlight keyHighlight;
     public static SlotBinds slotBinds;
+    public static HotbarSwap hotbarSwap;
     public static TerminalManager terminalManager;
     public static AutoTerminals autoTerminals;
     public static DungeonMap dungeonMap;
@@ -216,6 +218,7 @@ public class ModuleManager {
         this.addModule(crateAura = new CrateAura());
         this.addModule(keyHighlight = new KeyHighlight());
         this.addModule(slotBinds = new SlotBinds());
+        this.addModule(hotbarSwap = new HotbarSwap());
         this.addModule(terminalManager = new TerminalManager());
         this.addModule(autoTerminals = new AutoTerminals());
         this.addModule(dungeonMap = new DungeonMap());

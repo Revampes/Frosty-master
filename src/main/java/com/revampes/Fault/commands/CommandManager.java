@@ -1,6 +1,7 @@
 package com.revampes.Fault.commands;
 
 import com.revampes.Fault.commands.impl.*;
+import com.revampes.Fault.commands.impl.HotbarCommand;
 import com.revampes.Fault.modules.Module;
 
 import java.util.ArrayList;
@@ -14,6 +15,7 @@ public class CommandManager {
     public static ItemCommand itemCommand;
     public static PosCommand posCommand;
     public static ToggleCommand toggleCommand;
+    public static HotbarCommand hotbarCommand;
 
     public void register() {
         this.addCommand(bindCommand = new BindCommand());
@@ -21,6 +23,7 @@ public class CommandManager {
         this.addCommand(itemCommand = new ItemCommand());
         this.addCommand(posCommand = new PosCommand());
         this.addCommand(toggleCommand = new ToggleCommand());
+        this.addCommand(hotbarCommand = new HotbarCommand());
     }
 
     public void addCommand(Command m) {

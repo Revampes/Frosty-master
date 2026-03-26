@@ -77,9 +77,14 @@ public class DungeonMap extends Module {
     private long lastWorldFallbackTryMs = 0L;
     private boolean wasInDungeon = false;
     private static final String[] NAME_FILTER = new String[] {
-        "shadow assassin", "lost adventurer", "diamond guy", "crypt", "watcher", "mob", "prime", "skeletor", "skeleton",
-        "zombie", "undead"
-
+        "the watcher", "bonzo", "scarf", "livid", "sadan", "lost adventurer", "angry archaeologist", "redstone warrior",
+        "shadow assassin", "king midas", "frozen adventurer", "crypt lurker", "crypt undead", "crypt dreadlord",
+        "tank zombie", "super tank zombie", "zombie grunt", "zombie soldier", "zombie knight", "zombie commander",
+        "zombie lord", "undead skeleton", "scared skeleton", "skeleton grunt", "skeleton master", "skeleton lord",
+        "sniper", "crypt souleater", " lonely spider", "cellar spider", "withermancer", "skeletor", "skeletor prime",
+        "super archer", "fels", "mimic", "deathmite", "blaze", "bat", "prince", "fairy", "revoker", "psycho", 
+        "reaper", "parasite", "cannibal", "mute", "ooze", "putrid", "freak", "leech", "flamer", "tear", "skull",
+        "mr. dead", "vader", "frost", "walker", "wandering soul", "giant"
     };
 
     public DungeonMap() {
@@ -503,7 +508,7 @@ public class DungeonMap extends Module {
 
             double nx = state.worldToMapNormalizedX(player.getX());
             double nz = state.worldToMapNormalizedZ(player.getZ());
-
+                                       
             if (nx < -0.50 || nx > 1.50 || nz < -0.50 || nz > 1.50) {
                 continue;
             }
