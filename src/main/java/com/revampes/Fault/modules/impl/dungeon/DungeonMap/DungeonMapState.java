@@ -313,6 +313,40 @@ public class DungeonMapState {
             }
         }
 
+        // Enforce that an ENTRANCE room only merges with at most one adjacent room.
+        for (int z = 0; z < roomsZ; z++) {
+            for (int x = 0; x < roomsX; x++) {
+                RoomSnapshot room = nextRooms[z][x];
+                if (room == null) continue;
+                if (room.kind() != DungeonRoomDatabase.RoomKind.ENTRANCE) continue;
+
+                // collect merged connectors around this entrance
+                List<int[]> mergedConnectors = new ArrayList<>();
+                // right
+                if (x < roomsX - 1 && nextH[z][x] == CONNECTOR_MERGED) mergedConnectors.add(new int[]{0, z, x});
+                // left
+                if (x > 0 && nextH[z][x - 1] == CONNECTOR_MERGED) mergedConnectors.add(new int[]{1, z, x - 1});
+                // down
+                if (z < roomsZ - 1 && nextV[z][x] == CONNECTOR_MERGED) mergedConnectors.add(new int[]{2, z, x});
+                // up
+                if (z > 0 && nextV[z - 1][x] == CONNECTOR_MERGED) mergedConnectors.add(new int[]{3, z - 1, x});
+
+                if (mergedConnectors.size() > 1) {
+                    // keep only the first merged connector, clear the rest
+                    for (int i = 1; i < mergedConnectors.size(); i++) {
+                        int[] info = mergedConnectors.get(i);
+                        int type = info[0];
+                        int cz = info[1];
+                        int cx = info[2];
+                        if (type == 0) nextH[cz][cx] = CONNECTOR_NONE; // right
+                        else if (type == 1) nextH[cz][cx] = CONNECTOR_NONE; // left
+                        else if (type == 2) nextV[cz][cx] = CONNECTOR_NONE; // down
+                        else if (type == 3) nextV[cz][cx] = CONNECTOR_NONE; // up
+                    }
+                }
+            }
+        }
+
         rooms = nextRooms;
         horizontalConnectorType = nextH;
         verticalConnectorType = nextV;

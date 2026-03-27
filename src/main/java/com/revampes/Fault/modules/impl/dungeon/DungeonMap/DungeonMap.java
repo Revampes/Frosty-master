@@ -14,6 +14,8 @@ import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.network.OtherClientPlayerEntity;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.client.network.PlayerListEntry;
+import net.minecraft.entity.player.SkinTextures;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
 
@@ -508,10 +510,8 @@ public class DungeonMap extends Module {
 
             double nx = state.worldToMapNormalizedX(player.getX());
             double nz = state.worldToMapNormalizedZ(player.getZ());
-                                       
-            if (nx < -0.50 || nx > 1.50 || nz < -0.50 || nz > 1.50) {
-                continue;
-            }
+            // Don't discard players just because they're a bit outside the map bounds.
+            // We'll clamp them later so they appear at the edge instead of disappearing.
 
             DungeonMapState.PlayerMarker bestMarker = null;
             int bestIndex = -1;
@@ -565,7 +565,48 @@ public class DungeonMap extends Module {
             if (half > 2) {
                 event.drawContext.fill(px - half, py - half, px + half, py + half, bg);
             }
-            event.drawContext.fill(px - 2, py - 2, px + 2, py + 2, color);
+            boolean drewHead = false;
+            try {
+                if (mc.getNetworkHandler() != null) {
+                    PlayerListEntry entry = mc.getNetworkHandler().getPlayerListEntry(player.getUuid());
+                    if (entry != null) {
+                        SkinTextures skins = entry.getSkinTextures();
+                        if (skins != null) {
+                            Object body = skins.body();
+                            Identifier skinId = null;
+                            if (body instanceof Identifier id) skinId = id;
+                            // Draw head from skin (base + overlay). Skin texture expected 64x64.
+                            if (skinId != null) {
+                                int headSize = Math.max(6, (int) Math.round(8 * mapScale.getInput()));
+                                int hx = px - headSize / 2;
+                                int hy = py - headSize / 2;
+                                // base head (u=8,v=8,w=8,h=8)
+                                event.drawContext.drawTexture(RenderPipelines.GUI_TEXTURED, skinId, hx, hy, 8.0f, 8.0f, headSize, headSize, 64, 64);
+                                // overlay (u=40,v=8,w=8,h=8)
+                                event.drawContext.drawTexture(RenderPipelines.GUI_TEXTURED, skinId, hx, hy, 40.0f, 8.0f, headSize, headSize, 64, 64);
+                                drewHead = true;
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+
+            if (!drewHead) {
+                event.drawContext.fill(px - 2, py - 2, px + 2, py + 2, color);
+                // draw a tiny directional indicator in front of the player dot using yaw
+                try {
+                    float yaw = player.getYaw();
+                    double rad = Math.toRadians(yaw);
+                    // Minecraft forward vector: X = -sin(yaw), Z = cos(yaw)
+                    int offX = MathHelper.floor(-Math.sin(rad) * 4.0);
+                    int offY = MathHelper.floor(Math.cos(rad) * 4.0);
+                    int dirX = px + offX;
+                    int dirY = py + offY;
+                    event.drawContext.fill(dirX - 1, dirY - 1, dirX + 1, dirY + 1, color);
+                } catch (Throwable ignored) {
+                }
+            }
 
             if (showTeammateNames.isToggled() && player.getName() != null) {
                 drawTeammateName(event, player.getName().getString(), px, py + 4);
