@@ -1,6 +1,7 @@
 package com.revampes.Fault.modules.impl.dungeon.DungeonMap;
 
 import net.minecraft.block.Block;
+import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.math.BlockPos;
@@ -165,14 +166,18 @@ public class DungeonMapState {
 
     public boolean updateFromPacket(Object packet, MinecraftClient mc) {
         mapPacketsSeen++;
-        markers = extractMarkers(packet);
+        List<PlayerMarker> packetMarkers = extractMarkers(packet);
 
         byte[] extracted = tryExtractColors(packet, mc);
         if (extracted == null || extracted.length != MAP_PIXELS) {
             return false;
         }
+        if (!looksLikeDungeonMap(extracted)) {
+            return false;
+        }
 
         mapPacketsParsed++;
+        markers = packetMarkers;
         this.colors = Arrays.copyOf(extracted, extracted.length);
         calibrateFromColors(extracted);
         scanWorldModel(mc, false);
@@ -264,8 +269,12 @@ public class DungeonMapState {
                 int worldZ = worldPos[1];
 
                 if (!isChunkLoaded(mc, worldX, worldZ)) {
-                    if (previous != null) {
-                        nextRooms[z][x] = new RoomSnapshot(previous.roomId(), previous.kind(), previous.name(), mapColor);
+                    RoomSnapshot fallback = buildFallbackRoomSnapshot(previous, mapColor);
+                    if (fallback != null) {
+                        nextRooms[z][x] = fallback;
+                        if (fallback.kind() == DungeonRoomDatabase.RoomKind.BLOOD) {
+                            stickyBloodCell[z][x] = true;
+                        }
                     }
                     continue;
                 }
@@ -278,10 +287,14 @@ public class DungeonMapState {
                     if (meta.kind() == DungeonRoomDatabase.RoomKind.BLOOD) {
                         stickyBloodCell[z][x] = true;
                     }
-                } else if (previous != null) {
-                    nextRooms[z][x] = new RoomSnapshot(previous.roomId(), previous.kind(), previous.name(), mapColor);
                 } else {
-                    nextRooms[z][x] = new RoomSnapshot(0, DungeonRoomDatabase.RoomKind.UNKNOWN, "", mapColor);
+                    RoomSnapshot fallback = buildFallbackRoomSnapshot(previous, mapColor);
+                    nextRooms[z][x] = fallback == null
+                        ? new RoomSnapshot(0, DungeonRoomDatabase.RoomKind.UNKNOWN, "", mapColor)
+                        : fallback;
+                    if (nextRooms[z][x].kind() == DungeonRoomDatabase.RoomKind.BLOOD) {
+                        stickyBloodCell[z][x] = true;
+                    }
                 }
 
                 if (mapColor == 18 && (stickyBloodCell[z][x] || (previous != null && previous.kind() == DungeonRoomDatabase.RoomKind.BLOOD))) {
@@ -312,6 +325,8 @@ public class DungeonMapState {
                 nextV[z][x] = detectVerticalConnector(mc, nextRooms, x, z, verticalConnectorType[z][x]);
             }
         }
+
+        pruneUnopenedRoomJoins(nextRooms, nextH, nextV);
 
         // Enforce that an ENTRANCE room only merges with at most one adjacent room.
         for (int z = 0; z < roomsZ; z++) {
@@ -352,15 +367,133 @@ public class DungeonMapState {
         verticalConnectorType = nextV;
     }
 
+    private RoomSnapshot buildFallbackRoomSnapshot(RoomSnapshot previous, int mapColor) {
+        DungeonRoomDatabase.RoomKind inferredKind = inferRoomKindFromMapColor(mapColor, previous);
+        if (previous != null) {
+            DungeonRoomDatabase.RoomKind finalKind = previous.kind() != DungeonRoomDatabase.RoomKind.UNKNOWN
+                ? previous.kind()
+                : inferredKind;
+            String name = (previous.name() == null || previous.name().isBlank())
+                ? defaultNameForKind(finalKind)
+                : previous.name();
+            int roomId = previous.roomId() != 0
+                ? previous.roomId()
+                : (name.isBlank() ? finalKind.name().hashCode() : name.hashCode());
+            return new RoomSnapshot(roomId, finalKind, name, mapColor);
+        }
+
+        String name = defaultNameForKind(inferredKind);
+        int roomId = name.isBlank() ? 0 : name.hashCode();
+        return new RoomSnapshot(roomId, inferredKind, name, mapColor);
+    }
+
+    private DungeonRoomDatabase.RoomKind inferRoomKindFromMapColor(int mapColor, RoomSnapshot previous) {
+        if (previous != null && previous.kind() != DungeonRoomDatabase.RoomKind.UNKNOWN) {
+            if (mapColor == 0 || mapColor == 85 || mapColor == 119) {
+                return previous.kind();
+            }
+        }
+
+        return switch (mapColor) {
+            case 30 -> DungeonRoomDatabase.RoomKind.ENTRANCE;
+            case 18 -> DungeonRoomDatabase.RoomKind.BLOOD;
+            case 62 -> DungeonRoomDatabase.RoomKind.TRAP;
+            case 66 -> DungeonRoomDatabase.RoomKind.PUZZLE;
+            case 74 -> DungeonRoomDatabase.RoomKind.CHAMPION;
+            case 82 -> DungeonRoomDatabase.RoomKind.FAIRY;
+            case 63 -> DungeonRoomDatabase.RoomKind.NORMAL;
+            default -> previous != null ? previous.kind() : DungeonRoomDatabase.RoomKind.UNKNOWN;
+        };
+    }
+
+    private String defaultNameForKind(DungeonRoomDatabase.RoomKind kind) {
+        return switch (kind) {
+            case BLOOD -> "Blood";
+            case CHAMPION -> "Champion";
+            case ENTRANCE -> "Entrance";
+            case FAIRY -> "Fairy";
+            case NORMAL -> "Normal";
+            case PUZZLE -> "Puzzle";
+            case RARE -> "Rare";
+            case TRAP -> "Trap";
+            case UNKNOWN -> "";
+        };
+    }
+
+    private void pruneUnopenedRoomJoins(RoomSnapshot[][] roomGrid, int[][] nextH, int[][] nextV) {
+        for (int z = 0; z < roomsZ; z++) {
+            for (int x = 0; x < roomsX; x++) {
+                RoomSnapshot room = roomGrid[z][x];
+                if (room == null || !isUnopenedLikeColor(room.mapColor())) {
+                    continue;
+                }
+
+                List<ConnectorRef> joinedToDiscovered = new ArrayList<>(4);
+                if (x < roomsX - 1 && nextH[z][x] == CONNECTOR_MERGED && isDiscoveredLikeRoom(roomGrid[z][x + 1])) {
+                    joinedToDiscovered.add(new ConnectorRef(true, z, x));
+                }
+                if (x > 0 && nextH[z][x - 1] == CONNECTOR_MERGED && isDiscoveredLikeRoom(roomGrid[z][x - 1])) {
+                    joinedToDiscovered.add(new ConnectorRef(true, z, x - 1));
+                }
+                if (z < roomsZ - 1 && nextV[z][x] == CONNECTOR_MERGED && isDiscoveredLikeRoom(roomGrid[z + 1][x])) {
+                    joinedToDiscovered.add(new ConnectorRef(false, z, x));
+                }
+                if (z > 0 && nextV[z - 1][x] == CONNECTOR_MERGED && isDiscoveredLikeRoom(roomGrid[z - 1][x])) {
+                    joinedToDiscovered.add(new ConnectorRef(false, z - 1, x));
+                }
+
+                if (joinedToDiscovered.size() <= 1) {
+                    continue;
+                }
+
+                for (int i = 1; i < joinedToDiscovered.size(); i++) {
+                    ConnectorRef ref = joinedToDiscovered.get(i);
+                    if (ref.horizontal()) {
+                        nextH[ref.z()][ref.x()] = CONNECTOR_NONE;
+                    } else {
+                        nextV[ref.z()][ref.x()] = CONNECTOR_NONE;
+                    }
+                }
+            }
+        }
+    }
+
+    private static boolean isDiscoveredLikeRoom(RoomSnapshot room) {
+        return room != null && !isUnopenedLikeColor(room.mapColor());
+    }
+
+    private static boolean isUnopenedLikeColor(int color) {
+        return color == 0 || color == 82 || color == 85 || color == 119;
+    }
+
     private int detectHorizontalConnector(MinecraftClient mc, RoomSnapshot[][] roomGrid, int betweenX, int rowZ, int previous) {
         RoomSnapshot left = roomGrid[rowZ][betweenX];
         RoomSnapshot right = roomGrid[rowZ][betweenX + 1];
         if (left == null || right == null || left.mapColor() == 0 || right.mapColor() == 0) {
-            return isPersistentConnector(previous) ? previous : CONNECTOR_NONE;
+            return CONNECTOR_NONE;
         }
 
-        if (left.roomId() != 0 && left.roomId() == right.roomId()) {
+        int joinColor = getHorizontalJoinColorValue(betweenX, rowZ);
+        int mapDoorColor = getHorizontalDoorColorValue(betweenX, rowZ);
+        if (
+            mapDoorColor != 0 &&
+            mapDoorColor != 18 &&
+            mapDoorColor != 82 &&
+            mapDoorColor != 85 &&
+            mapDoorColor != 119 &&
+            joinColor == mapDoorColor &&
+            left.mapColor() == mapDoorColor &&
+            right.mapColor() == mapDoorColor
+        ) {
             return CONNECTOR_MERGED;
+        }
+        if (mapDoorColor == 82 || mapDoorColor == 85) {
+            return CONNECTOR_UNKNOWN;
+        }
+
+        int mapDoorType = inferDoorTypeFromMapColor(mapDoorColor);
+        if (mapDoorType != CONNECTOR_UNKNOWN) {
+            return mapDoorType;
         }
 
         int[] leftWorld = mapRoomToWorld(betweenX, rowZ, roomTransformMode);
@@ -369,11 +502,8 @@ public class DungeonMapState {
         int boundaryZ = leftWorld[1];
 
         int door = detectWorldDoorType(mc, boundaryX, boundaryZ, left, right);
-        if (door == CONNECTOR_UNKNOWN && previous != CONNECTOR_UNKNOWN) {
-            return previous;
-        }
-        if (door == CONNECTOR_NONE && isPersistentConnector(previous)) {
-            return previous;
+        if (door == CONNECTOR_UNKNOWN) {
+            return previous == CONNECTOR_UNKNOWN ? CONNECTOR_NONE : previous;
         }
         return door;
     }
@@ -382,11 +512,30 @@ public class DungeonMapState {
         RoomSnapshot up = roomGrid[betweenZ][columnX];
         RoomSnapshot down = roomGrid[betweenZ + 1][columnX];
         if (up == null || down == null || up.mapColor() == 0 || down.mapColor() == 0) {
-            return isPersistentConnector(previous) ? previous : CONNECTOR_NONE;
+            return CONNECTOR_NONE;
         }
 
-        if (up.roomId() != 0 && up.roomId() == down.roomId()) {
+        int joinColor = getVerticalJoinColorValue(columnX, betweenZ);
+        int mapDoorColor = getVerticalDoorColorValue(columnX, betweenZ);
+        if (
+            mapDoorColor != 0 &&
+            mapDoorColor != 18 &&
+            mapDoorColor != 82 &&
+            mapDoorColor != 85 &&
+            mapDoorColor != 119 &&
+            joinColor == mapDoorColor &&
+            up.mapColor() == mapDoorColor &&
+            down.mapColor() == mapDoorColor
+        ) {
             return CONNECTOR_MERGED;
+        }
+        if (mapDoorColor == 82 || mapDoorColor == 85) {
+            return CONNECTOR_UNKNOWN;
+        }
+
+        int mapDoorType = inferDoorTypeFromMapColor(mapDoorColor);
+        if (mapDoorType != CONNECTOR_UNKNOWN) {
+            return mapDoorType;
         }
 
         int[] upWorld = mapRoomToWorld(columnX, betweenZ, roomTransformMode);
@@ -395,13 +544,20 @@ public class DungeonMapState {
         int boundaryZ = (upWorld[1] + downWorld[1]) / 2;
 
         int door = detectWorldDoorType(mc, boundaryX, boundaryZ, up, down);
-        if (door == CONNECTOR_UNKNOWN && previous != CONNECTOR_UNKNOWN) {
-            return previous;
-        }
-        if (door == CONNECTOR_NONE && isPersistentConnector(previous)) {
-            return previous;
+        if (door == CONNECTOR_UNKNOWN) {
+            return previous == CONNECTOR_UNKNOWN ? CONNECTOR_NONE : previous;
         }
         return door;
+    }
+
+    private int inferDoorTypeFromMapColor(int mapDoorColor) {
+        return switch (mapDoorColor) {
+            case 119 -> CONNECTOR_DOOR_WITHER;
+            case 18 -> CONNECTOR_DOOR_BLOOD;
+            case 82, 85 -> CONNECTOR_UNKNOWN;
+            case 0 -> CONNECTOR_NONE;
+            default -> CONNECTOR_DOOR_NORMAL;
+        };
     }
 
     private boolean isPersistentConnector(int connectorType) {
@@ -422,24 +578,14 @@ public class DungeonMapState {
 
         BlockPos center = new BlockPos(worldX, 69, worldZ);
         Block centerBlock = mc.world.getBlockState(center).getBlock();
+        if (centerBlock == Blocks.AIR || centerBlock == Blocks.BARRIER) {
+            return CONNECTOR_DOOR_NORMAL;
+        }
         if (centerBlock == Blocks.COAL_BLOCK) {
             return CONNECTOR_DOOR_WITHER;
         }
         if (centerBlock == Blocks.RED_TERRACOTTA) {
             return CONNECTOR_DOOR_BLOOD;
-        }
-
-        int top = getTopLayerAt(mc, worldX, worldZ);
-        if (top <= 0) {
-            return CONNECTOR_NONE;
-        }
-
-        if (top == 73 || top == 81) {
-            return CONNECTOR_DOOR_NORMAL;
-        }
-
-        if (top > 73 && (a.kind() == DungeonRoomDatabase.RoomKind.ENTRANCE || b.kind() == DungeonRoomDatabase.RoomKind.ENTRANCE)) {
-            return CONNECTOR_DOOR_NORMAL;
         }
 
         return CONNECTOR_NONE;
@@ -537,10 +683,8 @@ public class DungeonMapState {
             }
             return cachedRoomColor[roomZ][roomX];
         }
-        int half = roomSize / 2;
         int tileSize = roomSize + 4;
-        MapVec2i startCenter = startCoords.add(new MapVec2i(half, half));
-        int liveColor = getColorAt(startCenter.x + roomX * tileSize, startCenter.z + roomZ * tileSize);
+        int liveColor = getColorAt(startCoords.x + roomX * tileSize, startCoords.z + roomZ * tileSize);
         if (roomX >= 0 && roomZ >= 0 && roomZ < cachedRoomColor.length && roomX < cachedRoomColor[roomZ].length) {
             if (liveColor != 0) {
                 cachedRoomColor[roomZ][roomX] = liveColor;
@@ -551,24 +695,49 @@ public class DungeonMapState {
         return liveColor;
     }
 
-    public int getHorizontalDoorColorValue(int betweenX, int rowZ) {
-        if (!hasData()) return 0;
+    public int getRoomCenterColorValue(int roomX, int roomZ) {
+        if (!hasData()) {
+            return getRoomColorValue(roomX, roomZ);
+        }
         int half = roomSize / 2;
         int tileSize = roomSize + 4;
-        MapVec2i startCenter = startCoords.add(new MapVec2i(half, half));
-        int doorOffset = half + betweenX * tileSize;
-        int midRoomOffset = rowZ * tileSize;
-        return getColorAt(startCenter.x + doorOffset, startCenter.z + midRoomOffset);
+        int centerColor = getColorAt(startCoords.x + roomX * tileSize + half, startCoords.z + roomZ * tileSize + half);
+        if (centerColor == 0) {
+            return getRoomColorValue(roomX, roomZ);
+        }
+        return centerColor;
+    }
+
+    public int getHorizontalDoorColorValue(int betweenX, int rowZ) {
+        if (!hasData()) return 0;
+        int tileSize = roomSize + 4;
+        int doorX = startCoords.x + betweenX * tileSize + roomSize;
+        int doorZ = startCoords.z + rowZ * tileSize + roomSize / 2;
+        return getColorAt(doorX, doorZ);
+    }
+
+    public int getHorizontalJoinColorValue(int betweenX, int rowZ) {
+        if (!hasData()) return 0;
+        int tileSize = roomSize + 4;
+        int joinX = startCoords.x + betweenX * tileSize + roomSize;
+        int joinZ = startCoords.z + rowZ * tileSize;
+        return getColorAt(joinX, joinZ);
     }
 
     public int getVerticalDoorColorValue(int columnX, int betweenZ) {
         if (!hasData()) return 0;
-        int half = roomSize / 2;
         int tileSize = roomSize + 4;
-        MapVec2i startCenter = startCoords.add(new MapVec2i(half, half));
-        int doorOffset = half + betweenZ * tileSize;
-        int midRoomOffset = columnX * tileSize;
-        return getColorAt(startCenter.x + midRoomOffset, startCenter.z + doorOffset);
+        int doorX = startCoords.x + columnX * tileSize + roomSize / 2;
+        int doorZ = startCoords.z + betweenZ * tileSize + roomSize;
+        return getColorAt(doorX, doorZ);
+    }
+
+    public int getVerticalJoinColorValue(int columnX, int betweenZ) {
+        if (!hasData()) return 0;
+        int tileSize = roomSize + 4;
+        int joinX = startCoords.x + columnX * tileSize;
+        int joinZ = startCoords.z + betweenZ * tileSize + roomSize;
+        return getColorAt(joinX, joinZ);
     }
 
     private int getColorAt(int x, int z) {
@@ -583,11 +752,7 @@ public class DungeonMapState {
             return Integer.MIN_VALUE;
         }
         WorldChunk chunk = mc.world.getChunk(worldX >> 4, worldZ >> 4);
-        int top = getTopLayerOfRoom(worldX, worldZ, chunk);
-        if (top <= 0) {
-            return Integer.MIN_VALUE;
-        }
-        return getCoreAtHeight(worldX, worldZ, top, chunk);
+        return getCoreAtHeight(worldX, worldZ, 140, chunk);
     }
 
     private int getTopLayerAt(MinecraftClient mc, int worldX, int worldZ) {
@@ -617,34 +782,19 @@ public class DungeonMapState {
     }
 
     private int getCoreAtHeight(int worldX, int worldZ, int roomHeight, WorldChunk chunk) {
-        StringBuilder sb = new StringBuilder(170);
-        int clampedHeight = Math.max(11, Math.min(140, roomHeight));
-        for (int i = 0; i < 140 - clampedHeight; i++) {
-            sb.append('0');
-        }
-
-        int consecutiveBedrock = 0;
-        for (int y = clampedHeight; y >= 12; y--) {
+        StringBuilder sb = new StringBuilder(768);
+        for (int y = 140; y >= 12; y--) {
             MUTABLE_POS.set(worldX, y, worldZ);
-            Block block = chunk.getBlockState(MUTABLE_POS).getBlock();
+            BlockState state = chunk.getBlockState(MUTABLE_POS);
+            Block block = state.getBlock();
 
-            if (block == Blocks.AIR && consecutiveBedrock >= 2 && y < 69) {
-                for (int i = 0; i < y - 11; i++) {
-                    sb.append('0');
-                }
-                break;
+            if (block == Blocks.OAK_PLANKS || block == Blocks.TRAPPED_CHEST || block == Blocks.CHEST || block == Blocks.IRON_BARS) {
+                sb.append('0');
+                continue;
             }
 
-            if (block == Blocks.BEDROCK) {
-                consecutiveBedrock++;
-            } else {
-                consecutiveBedrock = 0;
-                if (block == Blocks.OAK_PLANKS || block == Blocks.TRAPPED_CHEST || block == Blocks.CHEST) {
-                    continue;
-                }
-            }
-
-            sb.append(block);
+            int stateId = Block.getRawIdFromState(state);
+            sb.append(Math.max(stateId, 0));
         }
 
         return sb.toString().hashCode();
@@ -663,7 +813,6 @@ public class DungeonMapState {
                     continue;
                 }
 
-                byte[] best = null;
                 for (Object state : map.values()) {
                     if (state == null) continue;
                     byte[] mapColors = findByteArray(state, 0, 4, Collections.newSetFromMap(new IdentityHashMap<>()));
@@ -672,14 +821,6 @@ public class DungeonMapState {
                     if (looksLikeDungeonMap(mapColors)) {
                         return mapColors;
                     }
-
-                    if (best == null) {
-                        best = mapColors;
-                    }
-                }
-
-                if (best != null) {
-                    return best;
                 }
             }
         } catch (Throwable ignored) {
@@ -710,8 +851,8 @@ public class DungeonMapState {
                 continue;
             }
 
-            int mapX = clamp((x + 128) / 2, 0, 127);
-            int mapZ = clamp((z + 128) / 2, 0, 127);
+            int mapX = clamp(Math.round((x + 126) * 0.5f), 0, 127);
+            int mapZ = clamp(Math.round((z + 126) * 0.5f), 0, 127);
             String label = readTextLike(decoration, "name");
             result.add(new PlayerMarker(mapX, mapZ, rot == null ? 0 : rot, label == null ? "" : label));
         }
@@ -800,31 +941,39 @@ public class DungeonMapState {
 
     private static boolean isPlayerDecoration(Object decoration) {
         Object type = readMember(decoration, "type");
-        if (type == null) {
-            return false;
-        }
-        String text = type.toString().toLowerCase();
-        if (text.contains("player")) {
+        if (containsPlayerLikeToken(type)) {
             return true;
         }
 
-        Object id = readMember(type, "id");
-        if (id != null) {
-            String idText = id.toString().toLowerCase();
-            if (idText.contains("player")) {
-                return true;
-            }
+        Object id = type == null ? null : readMember(type, "id");
+        if (containsPlayerLikeToken(id)) {
+            return true;
         }
 
-        Object assetId = readMember(type, "asset");
-        if (assetId != null) {
-            String assetText = assetId.toString().toLowerCase();
-            if (assetText.contains("player")) {
-                return true;
-            }
+        Object assetId = type == null ? null : readMember(type, "asset");
+        if (containsPlayerLikeToken(assetId)) {
+            return true;
+        }
+
+        if (containsPlayerLikeToken(readMember(decoration, "asset"))) {
+            return true;
+        }
+        if (containsPlayerLikeToken(readMember(decoration, "id"))) {
+            return true;
+        }
+        if (containsPlayerLikeToken(readMember(decoration, "name"))) {
+            return true;
         }
 
         return false;
+    }
+
+    private static boolean containsPlayerLikeToken(Object value) {
+        if (value == null) {
+            return false;
+        }
+        String text = value.toString().toLowerCase();
+        return text.contains("player") || text.contains("off_map") || text.contains("off_limits");
     }
 
     private static Integer readNumeric(Object object, String key) {
@@ -1069,6 +1218,9 @@ public class DungeonMapState {
     }
 
     private record TransformResult(int mode, int score, int knownRooms) {
+    }
+
+    private record ConnectorRef(boolean horizontal, int z, int x) {
     }
 
     public record PlayerMarker(int mapX, int mapZ, int rotation, String label) {

@@ -1,0 +1,3621 @@
+package com.github.synnerz.devonian.api.dungeon.mapEnums
+
+enum class CheckmarkTypes {
+    NONE,
+    WHITE,
+    GREEN,
+    FAILED,
+    UNEXPLORED;
+}
+
+package com.github.synnerz.devonian.api.dungeon.mapEnums
+
+enum class ClearTypes {
+    MOB,
+    MINIBOSS,
+    OTHER;
+}
+
+package com.github.synnerz.devonian.api.dungeon.mapEnums
+
+enum class DoorTypes {
+    NORMAL,
+    WITHER,
+    BLOOD,
+    ENTRANCE;
+}
+
+package com.github.synnerz.devonian.api.dungeon.mapEnums
+
+enum class RoomTypes(val prio: Int) {
+    BLOOD(0),
+    ENTRANCE(10),
+    PUZZLE(20),
+    RARE(30),
+    YELLOW(40),
+    TRAP(50),
+    UNKNOWN(60),
+    FAIRY(70),
+    NORMAL(80);
+
+    companion object {
+        fun byName(name: String) =
+            RoomTypes.entries.find { it.name == name.uppercase() }
+    }
+}
+
+package com.github.synnerz.devonian.api.dungeon.mapEnums
+
+enum class ShapeTypes {
+    Unknown,
+    Shape1x1,
+    Shape1x2, Shape1x3, Shape1x4,
+    Shape2x2,
+    ShapeL;
+}
+
+package com.github.synnerz.devonian.api.dungeon
+
+import com.github.synnerz.devonian.api.WorldUtils
+import com.github.synnerz.devonian.api.dungeon.mapEnums.DoorTypes
+import net.minecraft.world.level.block.Blocks
+
+class DungeonDoor(val comp: WorldComponentPosition) {
+    var rotation: Int = -1
+    var opened = false
+    var type: DoorTypes = DoorTypes.NORMAL
+    val rooms = mutableSetOf<DungeonRoom>()
+    val roomComp1: ComponentPosition
+    val roomComp2: ComponentPosition
+    var holyShitFairyDoorPleaseStopFlashingSobs = false
+
+    init {
+        val cx = comp.cx
+        val cz = comp.cz
+        if ((cx and 1) == 1) {
+            roomComp1 = ComponentPosition((cx - 1) shr 1, cz shr 1)
+            roomComp2 = ComponentPosition((cx + 1) shr 1, cz shr 1)
+        } else {
+            roomComp1 = ComponentPosition(cx shr 1, (cz - 1) shr 1)
+            roomComp2 = ComponentPosition(cx shr 1, (cz + 1) shr 1)
+        }
+    }
+
+    override fun toString(): String {
+        return "DungeonDoor[type=\"$type\", rotation=\"$rotation\", opened=\"$opened\"]"
+    }
+
+    fun check() {
+        if (opened) return
+        val x = comp.wx
+        val z = comp.wz
+        if (!WorldUtils.isChunkLoaded(x, z)) return
+
+        val blockId = WorldUtils.getBlockState(x, 69, z) ?: return
+
+        opened = blockId.isAir || blockId.block == Blocks.BARRIER
+
+        type = when (blockId.block) {
+            // idk anything infested probably just to be safe
+            Blocks.INFESTED_COBBLESTONE,
+            Blocks.INFESTED_CHISELED_STONE_BRICKS,
+            Blocks.INFESTED_CRACKED_STONE_BRICKS,
+            Blocks.INFESTED_DEEPSLATE,
+            Blocks.INFESTED_MOSSY_STONE_BRICKS,
+            Blocks.INFESTED_STONE,
+            Blocks.INFESTED_STONE_BRICKS
+                -> DoorTypes.ENTRANCE
+
+            Blocks.COAL_BLOCK -> DoorTypes.WITHER
+            Blocks.RED_TERRACOTTA -> DoorTypes.BLOOD
+            else -> DoorTypes.NORMAL
+        }
+        if (opened && holyShitFairyDoorPleaseStopFlashingSobs && !rooms.all { it.explored }) type = DoorTypes.WITHER
+    }
+}
+
+package com.github.synnerz.devonian.api.dungeon
+
+import com.github.synnerz.devonian.api.dungeon.Dungeons.DungeonBoss
+import com.github.synnerz.devonian.api.dungeon.mapEnums.CheckmarkTypes
+import com.github.synnerz.devonian.api.events.CancellableEvent
+import com.github.synnerz.devonian.api.events.Event
+import com.github.synnerz.devonian.api.events.Threaded
+
+abstract class DungeonEvent {
+    class MimicKilled : Event
+    class PrinceKilled : Event
+    class RunStarted : Event
+    // class WitherKeyDrop : Event() // maybe?
+    // class BloodKeyDrop : Event() // maybe?
+    class RoomEnter(val room: DungeonRoom, val idx: Int) : Event
+    class RoomLeave(val room: DungeonRoom?, val idx: Int) : Event
+    class BossRoomEnter(val boss: DungeonBoss, val floor: FloorType) : Event
+    @Threaded class FloorEnter(val floorType: FloorType) : Event
+    class BossMessageEvent(val boss: DungeonBoss, val message: String) : Event
+    class SecretUpdateEvent(
+        val current: Int,
+        val total: Int,
+        val room: DungeonRoom,
+    ) : Event
+    class RoomUpdateEvent(
+        val room: DungeonRoom,
+        val previousCheck: CheckmarkTypes,
+        val currentCheck: CheckmarkTypes,
+    ) : Event
+    class SecretClicked(
+        val x: Double, val y: Double, val z: Double,
+        val isSkull: Boolean = false,
+        val isRedstone: Boolean = false,
+        val isLever: Boolean = false,
+    ) : Event {
+        companion object {
+            @JvmStatic
+            val SECRET_SKULLS = listOf("e0f3e929-869e-3dca-9504-54c666ee6f23", "fed95410-aba1-39df-9b95-1d4f361eb66e")
+            @JvmStatic
+            val SECRET_BLOCKS = listOf("minecraft:chest", "minecraft:lever", "minecraft:trapped_chest")
+
+            @JvmStatic
+            fun isRedstonekey(id: String): Boolean = id == SECRET_SKULLS[1]
+        }
+    }
+    class SecretPickup(val x: Double, val y: Double, val z: Double) : Event {
+        companion object {
+            @JvmStatic
+            val SECRET_ITEMS = setOf(
+                "POTION",
+                "DUNGEON_DECOY", "INFLATABLE_JERRY", "SPIRIT_LEAP", "DUNGEON_TRAP",
+                "TRAINING_WEIGHTS", "DEFUSE_KIT", "DUNGEON_CHEST_KEY",
+                "TREASURE_TALISMAN", "REVIVE_STONE", "ARCHITECT_FIRST_DRAFT",
+                "CANDYCOMB"
+            )
+        }
+    }
+    @Threaded class SecretBatSound(val x: Double, val y: Double, val z: Double) : CancellableEvent() {
+        companion object {
+            @JvmStatic
+            val SECRET_BATS = listOf("minecraft:entity.bat.death", "minecraft:entity.bat.hurt")
+        }
+    }
+    class SecretBat(val x: Double, val y: Double, val z: Double) : Event
+}
+
+package com.github.synnerz.devonian.api.dungeon
+
+import com.github.synnerz.devonian.Devonian
+import com.github.synnerz.devonian.api.Location
+import com.github.synnerz.devonian.api.Scheduler
+import com.github.synnerz.devonian.api.dungeon.mapEnums.CheckmarkTypes
+import com.github.synnerz.devonian.api.dungeon.mapEnums.DoorTypes
+import com.github.synnerz.devonian.api.dungeon.mapEnums.RoomTypes
+import com.github.synnerz.devonian.api.events.EventBus
+import com.github.synnerz.devonian.api.events.PacketReceivedEvent
+import com.github.synnerz.devonian.features.dungeons.map.DungeonMap
+import com.github.synnerz.devonian.utils.math.MathUtils
+import net.minecraft.network.protocol.game.ClientboundMapItemDataPacket
+import net.minecraft.world.item.MapItem
+import net.minecraft.world.level.saveddata.maps.MapDecorationTypes
+import net.minecraft.world.level.saveddata.maps.MapId
+import net.minecraft.world.level.saveddata.maps.MapItemSavedData
+import kotlin.math.PI
+import kotlin.math.max
+
+object DungeonMapScanner {
+    private const val COLOR_SIZE = 16384
+    private const val SCAN = 128
+    private const val ROOM_SPACING = 4
+    var roomSize = -1
+    var roomGap = -1
+    var roomCount = -1
+    var mapOffsetX = -1
+    var mapOffsetZ = -1
+    var mapWidth = -1
+    var mapHeight = -1
+    private val unscannedDoors = mutableSetOf<ComponentPosition>()
+    private var lastMapId: MapId? = null
+    private var swapCd = 0L
+
+    fun reset() {
+        roomSize = -1
+        roomGap = -1
+        roomCount = -1
+        mapOffsetX - 1
+        mapOffsetZ - 1
+        mapWidth = -1
+        mapHeight = -1
+        unscannedDoors.clear()
+        for (x in 0 .. 10) {
+            for (z in (x and 1 xor 1) .. 10 step 2) {
+                unscannedDoors.add(ComponentPosition(x, z))
+            }
+        }
+        val id = lastMapId ?: return
+        Devonian.minecraft.level?.overrideMapData(id, null as MapItemSavedData)
+        lastMapId = null
+        swapCd = System.currentTimeMillis() + 6000L
+    }
+
+    private enum class MapColors(val color: Byte) {
+        EMPTY(0),
+
+        CHECK_WHITE(34),
+        CHECK_GREEN(30),
+        CHECK_FAIL(18),
+        CHECK_UNKNOWN(119),
+
+        ROOM_ENTRANCE(30),
+        ROOM_NORMAL(63),
+        ROOM_UNOPENED(85),
+        ROOM_TRAP(62),
+        ROOM_BOSS(74),
+        ROOM_PUZZLE(66),
+        ROOM_FAIRY(82),
+        ROOM_BLOOD(18),
+
+        DOOR_WITHER(119),
+        DOOR_BLOOD(18);
+    }
+
+    private fun scanMapDimensions(colors: ByteArray): Boolean {
+        val floor = Dungeons.floor
+        if (floor == FloorType.None) return false
+
+        var entranceIdx = 0
+        var i = 0
+        while (entranceIdx < colors.size && colors[entranceIdx] != MapColors.ROOM_ENTRANCE.color) {
+            i++
+            entranceIdx = ((i and 7) shl 4) + ((i shr 3) shl 11)
+        }
+
+        if (entranceIdx >= colors.size) return false
+
+        var l = entranceIdx
+        var r = entranceIdx
+        while (colors[l - 1] == MapColors.ROOM_ENTRANCE.color) l--
+        while (colors[r + 1] == MapColors.ROOM_ENTRANCE.color) r++
+
+        var t = entranceIdx
+        var b = entranceIdx
+        while (colors[t - SCAN] == MapColors.ROOM_ENTRANCE.color) t -= SCAN
+        while (colors[b + SCAN] == MapColors.ROOM_ENTRANCE.color) b += SCAN
+
+        l = l and 127
+        r = r and 127
+        t = t shr 7
+        b = b shr 7
+        if (r - l + 1 != b - t + 1) println("map scanner: found non-square room?")
+        roomSize = r - l + 1
+        roomGap = roomSize + ROOM_SPACING
+
+        mapOffsetX = l % roomGap
+        mapOffsetZ = t % roomGap
+
+        mapWidth = roomGap * (floor.roomsW - 1) + roomSize
+        mapHeight = roomGap * (floor.roomsH - 1) + roomSize
+
+        if (SCAN - mapWidth >= roomGap * 2) mapOffsetX += roomGap
+        if (SCAN - mapHeight >= roomGap * 2) mapOffsetZ += roomGap
+
+        return true
+    }
+
+    private fun updatePlayerIcons(mapState: MapItemSavedData) {
+        if (Dungeons.players.isEmpty()) return
+
+        val decorations = mapState.decorations.toList()
+        if (Dungeons.players.filter { !it.value.isDead }.size != decorations.size) return
+
+        val floor = Dungeons.floor
+        if (floor == FloorType.None) return
+
+        val playerIter = Dungeons.players.iterator()
+        playerIter.next()
+        decorations.forEach { dec ->
+            if (dec.type == MapDecorationTypes.FRAME) return@forEach
+
+            var player = playerIter.next().value
+            while (player.isDisconnected) {
+                if (playerIter.hasNext()) player = playerIter.next().value
+                else return
+            }
+
+            val x = MathUtils.rescale(
+                (dec.x + 126.0) * 0.5,
+                mapOffsetX.toDouble(), (mapOffsetX + roomGap * floor.roomsW).toDouble(),
+                0.0, floor.roomsW * 2.0
+            )
+            val z = MathUtils.rescale(
+                (dec.y + 126.0) * 0.5,
+                mapOffsetZ.toDouble(), (mapOffsetZ + roomGap * floor.roomsH).toDouble(),
+                0.0, floor.roomsH * 2.0
+            )
+            val r = -(dec.rot / 16.0 * 360.0 + 90.0) / 180.0 * PI
+
+            player.updatePosition(PlayerComponentPosition(x, z, r))
+        }
+    }
+
+    private fun updateRooms(colors: ByteArray) {
+        if (colors.size < COLOR_SIZE) return
+        if (colors[0] != MapColors.EMPTY.color) return
+
+        val visited = mutableSetOf<DungeonRoom>()
+        for (idx in DungeonScanner.rooms.indices) {
+            val room_ = DungeonScanner.rooms[idx]
+            if (room_ != null && !visited.add(room_)) continue
+
+            val x = idx % 6
+            val z = idx / 6
+            val mrx = mapOffsetX + x * roomGap
+            val mrz = mapOffsetZ + z * roomGap
+            val mcx = mrx + roomSize / 2 - 1
+            val mcz = mrz + roomSize / 2 - 1 + 2
+            val mridx = mrx + mrz * SCAN
+            val mcidx = mcx + mcz * SCAN
+
+            val roomCol = colors.getOrNull(mridx) ?: continue
+            val centerCol = colors.getOrNull(mcidx) ?: continue
+
+            if (roomCol == MapColors.EMPTY.color) continue
+
+            val room: DungeonRoom
+            if (room_ == null) {
+                val comp = ComponentPosition(x * 2, z * 2)
+                room = DungeonRoom(mutableListOf(comp.withWorld()), 0)
+                DungeonScanner.addRoom(comp, room)
+            } else room = room_
+
+            room.type = when (roomCol) {
+                MapColors.ROOM_ENTRANCE.color -> RoomTypes.ENTRANCE
+                MapColors.ROOM_BLOOD.color -> RoomTypes.BLOOD
+                MapColors.ROOM_UNOPENED.color ->
+                    if (room.type == RoomTypes.UNKNOWN) RoomTypes.UNKNOWN
+                    else room.type
+                MapColors.ROOM_BOSS.color -> RoomTypes.YELLOW
+                MapColors.ROOM_FAIRY.color -> RoomTypes.FAIRY
+                MapColors.ROOM_NORMAL.color ->
+                    if (room.type == RoomTypes.RARE) RoomTypes.RARE
+                    else RoomTypes.NORMAL
+                MapColors.ROOM_PUZZLE.color -> RoomTypes.PUZZLE
+                MapColors.ROOM_TRAP.color -> RoomTypes.TRAP
+                else -> RoomTypes.UNKNOWN
+            }
+            if (!room.explored) {
+                room.explored = roomCol != MapColors.ROOM_UNOPENED.color
+                if (room.explored) Dungeons.totalRoomSecrets.value += room.totalSecrets
+            }
+
+            if (room.checkmark != CheckmarkTypes.GREEN) {
+                val previousCheck = room.checkmark
+                room.checkmark = if (roomCol == centerCol) CheckmarkTypes.NONE
+                else when (centerCol) {
+                    MapColors.CHECK_WHITE.color -> CheckmarkTypes.WHITE
+                    MapColors.CHECK_GREEN.color -> CheckmarkTypes.GREEN
+                    MapColors.CHECK_FAIL.color -> CheckmarkTypes.FAILED
+                    MapColors.CHECK_UNKNOWN.color ->
+                        if (room.checkmark == CheckmarkTypes.NONE) CheckmarkTypes.NONE
+                        else CheckmarkTypes.UNEXPLORED
+                    else -> CheckmarkTypes.NONE
+                }
+                if (previousCheck != room.checkmark) DungeonEvent.RoomUpdateEvent(room, previousCheck, room.checkmark).post()
+            }
+        }
+
+        unscannedDoors.removeIf { comp ->
+            val idx = comp.getDoorIdx()
+            val mjx = mapOffsetX + (comp.x / 2) * roomGap + (comp.x and 1) * roomSize
+            val mjz = mapOffsetZ + (comp.z / 2) * roomGap + (comp.z and 1) * roomSize
+            val mdx = mjx + (comp.z and 1) * roomSize / 2
+            val mdz = mjz + (comp.x and 1) * roomSize / 2
+            val mjidx = mjx + mjz * SCAN
+            val mdidx = mdx + mdz * SCAN
+
+            val joinedCol = colors.getOrNull(mjidx) ?: return@removeIf false
+            val doorCol = colors.getOrNull(mdidx) ?: return@removeIf false
+
+            if (doorCol == MapColors.EMPTY.color) return@removeIf false
+
+            if (joinedCol == doorCol) {
+                DungeonScanner.doors[idx]?.also { d ->
+                    d.rooms.forEach { it.doors.remove(d) }
+                }
+                DungeonScanner.doors[idx] = null
+                val rooms = comp.getNeighboringRooms()
+                if (rooms.size != 2) return@removeIf false
+                return@removeIf DungeonScanner.mergeRooms(rooms[0], rooms[1])
+            }
+
+            val door = DungeonScanner.doors[idx] ?: let {
+                val d = DungeonDoor(comp.withWorld())
+                DungeonScanner.addDoor(d)
+                d
+            }
+
+            return@removeIf when (doorCol) {
+                MapColors.DOOR_WITHER.color -> {
+                    door.type = DoorTypes.WITHER
+                    door.opened = false
+                    if (
+                        comp.getNeighboringRooms()
+                            .mapNotNull { DungeonScanner.rooms[it.getRoomIdx()] }
+                            .any { it.type == RoomTypes.FAIRY && !it.explored }
+                    ) door.holyShitFairyDoorPleaseStopFlashingSobs = true
+                    false
+                }
+
+                MapColors.DOOR_BLOOD.color -> {
+                    door.type = DoorTypes.BLOOD
+                    // door.opened = false
+                    // false
+                    true
+                }
+
+                else -> {
+                    door.type = DoorTypes.NORMAL
+                    door.opened = true
+                    true
+                }
+            }
+        }
+    }
+
+    init {
+        EventBus.on<PacketReceivedEvent> { event ->
+            val packet = event.packet
+            if (packet !is ClientboundMapItemDataPacket) return@on
+            val mapId = packet.mapId
+            if (mapId.id and 1000 != 0) return@on
+            if (Dungeons.inBoss.value) return@on
+
+            val world = Devonian.minecraft.level ?: return@on
+            val mapState = MapItem.getSavedData(mapId, world) ?: return@on
+            val colors = mapState.colors?.clone() ?: return@on
+            if (colors[0] != MapColors.EMPTY.color) lastMapId = mapId
+
+            if (roomSize == -1 && !scanMapDimensions(colors)) return@on
+            Scheduler.scheduleAfterPacket {
+                if (System.currentTimeMillis() < swapCd) return@scheduleAfterPacket
+                updatePlayerIcons(mapState)
+                updateRooms(colors)
+
+                DungeonMap.redrawMap(
+                    DungeonScanner.rooms.toList(),
+                    DungeonScanner.doors.toList()
+                )
+            }
+        }.setEnabled(Location.stateInArea("catacombs"))
+    }
+}
+
+package com.github.synnerz.devonian.api.dungeon
+
+import com.github.synnerz.devonian.config.Categories
+import com.github.synnerz.devonian.config.Config
+import com.github.synnerz.devonian.config.ConfigData
+import com.github.synnerz.devonian.utils.StringUtils.replaceCodes
+import com.github.synnerz.devonian.utils.math.MathUtils
+import net.minecraft.client.multiplayer.PlayerInfo
+import net.minecraft.world.entity.player.Player
+import java.awt.Color
+import kotlin.math.PI
+
+data class DungeonPlayer(
+    val name: String,
+    var profileInfo: PlayerInfo?,
+    var role: DungeonClass,
+    var classLevel: Int,
+    var isDead: Boolean,
+    var isDisconnected: Boolean = false,
+    var entity: Player? = null,
+    var position: PlayerComponentPosition? = null,
+    var updateTime: Double? = null,
+    var lastPosition: PlayerComponentPosition? = null,
+    var lastUpdateTime: Double? = null,
+) {
+    fun tick() {
+        if ((entity?.isDeadOrDying ?: true) || (entity?.isRemoved ?: true)) entity = null
+        val ent = entity ?: return
+        updatePosition(
+            PlayerComponentPosition.fromWorld(
+                ent.x,
+                ent.z,
+                -(ent.yRot.toDouble() + 90) * PI / 180.0
+            )
+        )
+    }
+
+    fun updatePosition(pos: PlayerComponentPosition) {
+        val time = System.nanoTime() * 1.0e-6
+        if (position == null) {
+            position = pos
+            updateTime = time
+            return
+        }
+        lastPosition = position
+        lastUpdateTime = updateTime
+        position = pos
+        updateTime = time
+    }
+
+    fun getLerpedPosition(): PlayerComponentPosition? {
+        val pos = position ?: return null
+        val lastPos = lastPosition ?: return pos
+        val uTime = updateTime ?: return pos
+        val luTime = lastUpdateTime ?: return pos
+        val time = System.nanoTime() * 1.0e-6
+        val f = (time - uTime) / (uTime - luTime)
+        return PlayerComponentPosition(
+            MathUtils.lerp(f, lastPos.x, pos.x),
+            MathUtils.lerp(f, lastPos.z, pos.z),
+            MathUtils.lerpAngle(f, lastPos.r, pos.r),
+        )
+    }
+}
+
+enum class DungeonClass(
+    val shortName: String,
+    val singleLetter: Char,
+    initialColorCode: String,
+    initialColor: Color,
+) {
+    Archer("Arch", 'a', "&c", Color(255, 85, 85, 255)),
+    Berserk("Bers", 'b', "&6", Color(255, 170, 0, 255)),
+    Mage("Mage", 'm', "&3", Color(0, 170, 170, 255)),
+    Healer("Heal", 'h', "&5", Color(170, 0, 170, 255)),
+    Tank("Tank", 't', "&a", Color(85, 255, 85, 255)),
+
+    Unknown("Unknown", '\u0000', "", Color(0, 0, 0, 255));
+
+    private val colorSetting = ConfigData.ColorPicker(
+        "dungeonColor$name",
+        initialColor.rgb,
+        null,
+        "Color of anything related to the $name class.",
+        "$name Color",
+        "Dungeon Colors",
+    ).also {
+        Config.registerCategory(it, Categories.GLOBAL, "Dungeon Colors")
+    }
+
+    val color: Color
+        get() = colorSetting.getColor()
+
+    val colorRgb: Int
+        get() = colorSetting.get()
+
+    private var cachedColorCode = initialColorCode.replaceCodes()
+    private val colorCodeSetting = ConfigData.TextInput(
+        "dungeonColorCode$name",
+        initialColorCode,
+        null,
+        "Color code for anything related to the $name class. Use & instead of the section symbol.",
+        "$name Color Code",
+        "Dungeon Colors",
+    ).also {
+        Config.registerCategory(it, Categories.GLOBAL, "Dungeon Colors")
+        it.onChange {
+            cachedColorCode = it.replaceCodes()
+        }
+    }
+    val colorCode: String
+        get() = cachedColorCode
+
+    companion object {
+        fun from(fullName: String): DungeonClass = when (fullName) {
+            "Archer" -> Archer
+            "Berserk" -> Berserk
+            "Mage" -> Mage
+            "Healer" -> Healer
+            "Tank" -> Tank
+            else -> Unknown
+        }
+    }
+}
+
+package com.github.synnerz.devonian.api.dungeon
+
+import com.github.synnerz.devonian.api.WorldUtils
+import com.github.synnerz.devonian.api.dungeon.mapEnums.CheckmarkTypes
+import com.github.synnerz.devonian.api.dungeon.mapEnums.ClearTypes
+import com.github.synnerz.devonian.api.dungeon.mapEnums.RoomTypes
+import com.github.synnerz.devonian.api.dungeon.mapEnums.ShapeTypes
+import net.minecraft.world.level.block.Blocks
+
+class DungeonRoom(comps: List<WorldComponentPosition>, var height: Int) {
+    val comps = mutableListOf<WorldComponentPosition>()
+    private val possibleCorners = mutableListOf<Triple<Int, WorldComponentPosition, WorldPosition>>()
+    var cores = listOf<Int>()
+    var explored = false
+    var name: String? = null
+    var roomID: Int? = null
+    var corner = WorldPosition.EMPTY
+    var rotation = -1
+    var type = RoomTypes.UNKNOWN
+    var checkmark = CheckmarkTypes.UNEXPLORED
+    var shape = ShapeTypes.Shape1x1
+    var totalSecrets = 0
+    var secretsCompleted = -1
+    var clear = ClearTypes.MOB
+    val doors = mutableSetOf<DungeonDoor>()
+    private var shapeIn = ""
+
+    init {
+        addComponents(comps.map { it.toComponent() })
+    }
+
+    override fun toString(): String {
+        return "DungeonRoom[name=\"$name\"" +
+                ", type=\"$type\"" +
+                ", rotation=\"$rotation\"" +
+                ", shape=\"$shape\"" +
+                ", checkmark=\"$checkmark\"" +
+                ", corner=\"$corner\"" +
+                ", cores=\"$cores\"" +
+                "]"
+    }
+
+    private fun loadFromData(data: DungeonScanner.RoomData) {
+        cores = data.cores
+        name = data.name
+        roomID = data.roomID
+        type = RoomTypes.byName(data.type) ?: RoomTypes.NORMAL
+        clear = when (data.clear) {
+            "mob" -> ClearTypes.MOB
+            "miniboss" -> ClearTypes.MINIBOSS
+            else -> ClearTypes.OTHER
+        }
+        totalSecrets = data.secrets
+        shapeIn = data.shape
+    }
+
+    private fun loadFromCore(core: Int): Boolean {
+        for (room in DungeonScanner.roomsData) {
+            if (!room.cores.contains(core)) continue
+
+            loadFromData(room)
+            return true
+        }
+
+        return false
+    }
+
+    fun update() {
+        comps.sortWith(compareBy<WorldComponentPosition> { it.cx }.thenBy { it.cz })
+
+        scan()
+        shape()
+    }
+
+    fun scan() = apply {
+        checkmark = CheckmarkTypes.UNEXPLORED
+        for (comp in comps) {
+            val x = comp.wx
+            val z = comp.wz
+            if (!WorldUtils.isChunkLoaded(x, z)) continue
+            if (height == 0) height = DungeonScanner.getHighestY(x, z)
+
+            loadFromCore(DungeonScanner.hashCeil(x, z))
+        }
+    }
+
+    fun addComponent(comp: ComponentPosition, update: Boolean = true) = apply {
+        if (comps.any { it.toComponent() == comp }) return@apply
+
+        val w = comp.withWorld()
+        comps.add(w)
+        roomOffset.forEachIndexed { i, v ->
+            possibleCorners.add(
+                Triple(
+                    i,
+                    w,
+                    WorldPosition(
+                        w.wx + v.x,
+                        w.wz + v.z
+                    )
+                )
+            )
+        }
+
+        if (update) update()
+    }
+
+    fun addComponents(comps: List<ComponentPosition>) = apply {
+        for (comp in comps) addComponent(comp, false)
+        update()
+    }
+
+    fun findRotation() {
+        if (height == 0) return
+        if (shapeIn == "1x4" && comps.size < 4) return
+
+        if (type == RoomTypes.FAIRY) {
+            val x = comps[0].wx
+            val z = comps[0].wz
+            rotation = 0
+            corner = WorldPosition(
+                x - halfRoomSize,
+                z - halfRoomSize
+            )
+            return
+        }
+
+        possibleCorners.removeIf { (idx, comp, pos) ->
+            if (shapeIn == "1x4") {
+                val cidx = comps.indexOf(comp)
+                if (cidx != 0 && cidx != comps.size - 1) return@removeIf true
+                val isHorz = comps[0].cz == comps[1].cz
+                if (cidx == 0) {
+                    if (isHorz) {
+                        if (idx != 0 && idx != 3) return@removeIf true
+                    } else {
+                        if (idx != 0 && idx != 1) return@removeIf true
+                    }
+                } else {
+                    if (isHorz) {
+                        if (idx != 1 && idx != 2) return@removeIf true
+                    } else {
+                        if (idx != 2 && idx != 3) return@removeIf true
+                    }
+                }
+            }
+            val x = pos.x
+            val z = pos.z
+            if (!WorldUtils.isChunkLoaded(x, z)) return@removeIf false
+
+            val blockState = WorldUtils.getBlockState(x, height, z) ?: return@removeIf false
+            val block = blockState.block ?: return@removeIf false
+            if (block != Blocks.BLUE_TERRACOTTA) return@removeIf true
+
+            rotation = idx * 90
+            corner = pos
+            true
+        }
+    }
+
+    private fun shape() {
+        val distCompA = comps.map { it.cx }.distinct().size
+        val distCompB = comps.map { it.cz }.distinct().size
+
+        shape = when {
+            comps.isEmpty() || comps.size > 4 -> ShapeTypes.Unknown
+            comps.size == 1 -> ShapeTypes.Shape1x1
+            comps.size == 2 -> ShapeTypes.Shape1x2
+            comps.size == 4 -> if (distCompA == 1 || distCompB == 1) ShapeTypes.Shape1x4 else ShapeTypes.Shape2x2
+            distCompA == comps.size || distCompB == comps.size -> ShapeTypes.Shape1x3
+            else -> ShapeTypes.ShapeL
+        }
+    }
+
+    private fun rotatePos(x: Int, z: Int, degree: Int): Pair<Int, Int> {
+        return when (degree) {
+            0 -> x to z
+            90 -> z to -x
+            180 -> -x to -z
+            270 -> -z to x
+            else -> x to z
+        }
+    }
+    
+    private fun rotatePos(x: Double, z: Double, degree: Int): Pair<Double, Double> {
+        return when (degree) {
+            0 -> x to z
+            90 -> z to -x
+            180 -> -x to -z
+            270 -> -z to x
+            else -> x to z
+        }
+    }
+
+    /**
+     * - Converts real world position coordinates into relative component position
+     * - NOTE: the Y value is always the same regardless, that never changes
+     */
+    fun fromPos(x: Int, z: Int): Pair<Int, Int>? {
+        if (!hasRotation()) return null
+        val x1 = x - corner.x
+        val z1 = z - corner.z
+
+        return rotatePos(x1, z1, rotation)
+    }
+
+    /**
+     * - Converts component positions into real world position coordinates
+     * - NOTE: the Y value is always the same regardless, that never changes
+     */
+    fun fromComp(x: Int, z: Int): Pair<Int, Int>? {
+        if (!hasRotation()) return null
+        val ( x1, z1 ) = rotatePos(x, z, 360 - rotation)
+        val x2 = x1 + corner.x
+        val z2 = z1 + corner.z
+
+        return x2 to z2
+    }
+
+    /**
+     * - Converts real world position coordinates into relative component position
+     * - NOTE: the Y value is always the same regardless, that never changes
+     */
+    fun fromPos(x: Double, z: Double): Pair<Double, Double>? {
+        if (!hasRotation()) return null
+        val x1 = x - corner.x - 0.5
+        val z1 = z - corner.z - 0.5
+
+        return rotatePos(x1 + 0.5, z1 + 0.5, rotation)
+    }
+
+    /**
+     * - Converts component positions into real world position coordinates
+     * - NOTE: the Y value is always the same regardless, that never changes
+     */
+    fun fromComp(x: Double, z: Double): Pair<Double, Double>? {
+        if (!hasRotation()) return null
+        val ( x1, z1 ) = rotatePos(x - 0.5, z - 0.5, 360 - rotation)
+        val x2 = x1 + corner.x + 0.5
+        val z2 = z1 + corner.z + 0.5
+
+        return x2 to z2
+    }
+
+    fun hasRotation() = rotation != -1 && corner != WorldPosition.EMPTY
+
+    companion object {
+        val roomOffset = listOf(
+            WorldPosition(-halfRoomSize, -halfRoomSize),
+            WorldPosition(halfRoomSize, -halfRoomSize),
+            WorldPosition(halfRoomSize, halfRoomSize),
+            WorldPosition(-halfRoomSize, halfRoomSize)
+        )
+    }
+}
+
+package com.github.synnerz.devonian.api.dungeon
+
+import com.github.synnerz.devonian.Devonian
+import com.github.synnerz.devonian.api.Location
+import com.github.synnerz.devonian.api.WorldUtils
+import com.github.synnerz.devonian.api.dungeon.mapEnums.CheckmarkTypes
+import com.github.synnerz.devonian.api.dungeon.mapEnums.DoorTypes
+import com.github.synnerz.devonian.api.dungeon.mapEnums.RoomTypes
+import com.github.synnerz.devonian.api.events.ActionbarEvent
+import com.github.synnerz.devonian.api.events.EventBus
+import com.github.synnerz.devonian.api.events.TickEvent
+import com.github.synnerz.devonian.features.dungeons.map.DungeonMap
+import com.google.gson.Gson
+import net.minecraft.tags.FluidTags
+import net.minecraft.world.level.block.Blocks
+import net.minecraft.world.level.block.SlabBlock
+import net.minecraft.world.level.block.state.BlockState
+
+@Suppress("MemberVisibilityCanBePrivate")
+object DungeonScanner {
+    data class RoomData(
+        val name: String,
+        val type: String,
+        val secrets: Int,
+        val cores: List<Int>,
+        val trappedChests: Int,
+        val roomID: Int,
+        val clear: String?,
+        val crypts: Int,
+        val clearScore: Int?,
+        val secretScore: Int?,
+        val shape: String
+    ) {
+        override fun toString(): String {
+            return "RoomData[name=\"$name\", type=\"$type\", secrets=\"$secrets\"," +
+            " cores=\"$cores\", roomId=\"$roomID\"" +
+            ", clear=\"$clear\", crypts=\"$crypts\", clearScore=\"$clearScore\"," +
+            " secretScore=\"$secretScore\", shape=\"$shape\"]"
+        }
+    }
+
+    val roomsData = Gson().fromJson(
+        this::class.java.getResourceAsStream("/assets/devonian/dungeons/rooms.json")
+            ?.bufferedReader()
+            .use { it?.readText() },
+        Array<RoomData>::class.java
+    ).toList()
+
+    var lastIdx: Int? = null
+    var currentRoom: DungeonRoom? = null
+    var rooms = MutableList<DungeonRoom?>(36) { null }
+    var doors = MutableList<DungeonDoor?>(60) { null }
+    var availablePos = findAvailablePos()
+    private var worldChangeCooldown = 20
+    private var foundEntrance = 20
+    private var wasInEntrance = false
+
+    private val secretRegex = "\\b(\\d+)/(\\d+) Secrets".toRegex()
+
+    private fun findAvailablePos(): MutableList<WorldComponentPosition> {
+        val pos = mutableListOf<WorldComponentPosition>()
+
+        for (z in 0 .. 10) {
+            for (x in 0 .. 10) {
+                if (x % 2 != 0 && z % 2 != 0) continue
+
+                pos.add(ComponentPosition(x, z).withWorld())
+            }
+        }
+
+        return pos
+    }
+
+    fun getHighestY(x: Int, z: Int): Int {
+        WorldUtils.world ?: return -1
+        var height = 0
+
+        for (idx in 256 downTo 0) {
+            val blockState = WorldUtils.getBlockState(x, idx, z)
+            val block = blockState?.block ?: continue
+
+            if (blockState.isAir || block == Blocks.GOLD_BLOCK) continue
+
+            height = idx
+            break
+        }
+
+        return height
+    }
+
+    private fun getLegacyId(blockState: BlockState, debug: Boolean = false): Int? {
+        val block = blockState.block
+        var registryName = WorldUtils.registryName(block)
+        val fluidState = blockState.fluidState
+        if (!fluidState.isEmpty) {
+            if (fluidState.`is`(FluidTags.WATER))
+                return if (fluidState.isSource) 9 else 8
+            if (fluidState.`is`(FluidTags.LAVA))
+                return if (fluidState.isSource) 11 else 10
+        }
+
+        if (block is SlabBlock)
+            registryName += "[type=${blockState.getValue(SlabBlock.TYPE).name.lowercase()}]"
+        val result = LegacyRegistry.BLOCKS[registryName]
+
+        // TODO: either remove or make it part of debug tools
+        if (result == null) println("Devonian\$DungeonScanner[state=\"Could not find registry\", name=\"$registryName\"]")
+        if (debug) println("Devonian\$DebugScanner[registry=\"$registryName\"]")
+
+        return result
+    }
+
+    @JvmOverloads
+    fun hashCeil(x: Int, z: Int, debug: Boolean = false): Int {
+        var str = ""
+
+        for (idx in 140 downTo 12) {
+            val blockState = WorldUtils.getBlockState(x, idx, z) ?: continue
+            val block = blockState.block ?: continue
+            val blockId = getLegacyId(blockState, debug) ?: continue
+            if (block == Blocks.IRON_BARS || block == Blocks.CHEST) {
+                str += "0"
+                continue
+            }
+            str += blockId
+        }
+
+        return str.hashCode()
+    }
+
+    private fun checkDoorState() {
+        for (door in doors) {
+            if (door == null || door.opened) continue
+
+            door.check()
+        }
+    }
+
+    private fun checkRoomState() {
+        for (room in rooms) {
+            if (room == null) continue
+            if (room.rotation != -1) continue
+
+            room.findRotation()
+        }
+    }
+
+    init {
+        rooms.fill(null)
+        doors.fill(null)
+
+        EventBus.on<TickEvent> {
+            if (--worldChangeCooldown >= 0) return@on
+            if (Dungeons.inBoss.value) return@on
+            val player = Devonian.minecraft.player ?: return@on
+            if (!WorldUtils.isChunkLoaded(player.x, player.z)) return@on
+            val comp = WorldPosition(player.x.toInt(), player.z.toInt()).toComponent()
+            if (!comp.isInBounds()) return@on
+            val jdx = comp.getRoomIdx()
+
+            if (jdx !in 0..35) return@on
+
+            var updateMap = scan()
+
+            val newRoom = rooms[jdx]
+            if (!wasInEntrance) {
+                if (newRoom?.type == RoomTypes.ENTRANCE) wasInEntrance = true
+                else if (foundEntrance > 0) return@on
+            }
+
+            checkRoomState()
+            checkDoorState()
+
+            // Will trigger for each component of the room
+            // perhaps hold the current room's name and match
+            // it with that, so we can be sure it's not the same room
+            if (lastIdx != null && lastIdx != jdx)
+                DungeonEvent.RoomLeave(currentRoom, lastIdx!!).post()
+
+            currentRoom = rooms[jdx]
+            if (currentRoom?.explored == false) {
+                Dungeons.totalRoomSecrets.value += currentRoom!!.totalSecrets
+                currentRoom?.explored = true
+                updateMap = true
+            }
+            if (currentRoom?.checkmark == CheckmarkTypes.UNEXPLORED) {
+                currentRoom?.checkmark = CheckmarkTypes.NONE
+                updateMap = true
+            }
+
+            if (updateMap) DungeonMap.redrawMap(rooms.toList(), doors.toList())
+
+            if (lastIdx == jdx) return@on
+            lastIdx = jdx
+            if (currentRoom != null) DungeonEvent.RoomEnter(currentRoom!!, jdx).post()
+        }.setEnabled(Location.stateInArea("catacombs"))
+
+        var lastRoom: DungeonRoom? = null
+        EventBus.on<ActionbarEvent> { event ->
+            val room = currentRoom ?: return@on
+            if (room != lastRoom) {
+                lastRoom = room
+                return@on
+            }
+            val match = secretRegex.find(event.message) ?: return@on
+
+            val found = match.groupValues.getOrNull(1)?.toInt() ?: return@on
+            val total = match.groupValues.getOrNull(2)?.toInt() ?: return@on
+
+            if (total != room.totalSecrets) println("mismatching secret counts in ${room.name}")
+            room.secretsCompleted = found
+            DungeonEvent.SecretUpdateEvent(found, total, room).post()
+        }.setEnabled(Location.stateInArea("catacombs"))
+    }
+
+    fun init() {
+        // TODO: remove this whenever finished (or impl in debug tools)
+
+//        DevonianCommand.command.subcommand("getcore") { _, _ ->
+//            val player = Devonian.minecraft.player ?: return@subcommand 0
+//            val comp = WorldPosition(player.x.toInt(), player.z.toInt()).toComponent()
+//            val room = rooms.getOrNull(comp.getRoomIdx()) ?: return@subcommand 0
+//            for (comp in room.comps) {
+//                val x = comp.wx
+//                val z = comp.wz
+//                ChatUtils.sendMessage("hash: ${hashCeil(x, z, true)}")
+//            }
+//            1
+//        }
+//
+//        DevonianCommand.command.subcommand("getpuzzledata") { _, _ ->
+//            rooms.forEach {
+//                if (it == null || it.type != RoomTypes.PUZZLE) return@forEach
+//                ChatUtils.sendMessage("&dPuzzle[name=&b\"${it.name}\"&d, rotation=&b\"${it.rotation}\"&d]")
+//            }
+//            1
+//        }
+
+    }
+
+    fun mergeRooms(comp1: ComponentPosition, comp2: ComponentPosition): Boolean {
+        val i1 = comp1.getRoomIdx()
+        val i2 = comp2.getRoomIdx()
+        val r1 = rooms[comp1.getRoomIdx()]
+        val r2 = rooms[comp2.getRoomIdx()]
+
+        if (r1 != null && r2 != null) {
+            if (i1 < i2) mergeRooms(r1, r2)
+            else mergeRooms(r2, r1)
+            return true
+        }
+        if (r1 == null && r2 == null) return false
+        val r: DungeonRoom
+        val c: ComponentPosition
+        if (r1 == null) {
+            r = r2!!
+            c = comp1
+        } else {
+            r = r1
+            c = comp2
+        }
+
+        r.addComponent(c)
+        addRoom(c, r)
+        return true
+    }
+
+    fun mergeRooms(room1: DungeonRoom, room2: DungeonRoom) {
+        if (room1 === room2) return
+
+        if (room1.type == RoomTypes.ENTRANCE || room2.type == RoomTypes.ENTRANCE) return
+
+        for (comp in room2.comps) {
+            val c = comp.toComponent()
+            room1.addComponent(c, false)
+
+            addRoom(c, room1, true)
+        }
+
+        room1.update()
+        if (room2.explored) room1.explored = true
+
+        room2.doors.forEach { it.rooms.remove(room2) }
+    }
+
+    fun addDoor(door: DungeonDoor) {
+        val comp = door.comp.toComponent()
+        val idx = comp.getDoorIdx()
+        if (idx !in 0 .. 59) return
+
+        doors[idx] = door
+        comp.getNeighboringRooms().forEach {
+            rooms.getOrNull(it.getRoomIdx())?.also {
+                it.doors.add(door)
+                door.rooms.add(it)
+            }
+        }
+    }
+
+    fun addRoom(comp: ComponentPosition, room: DungeonRoom, force: Boolean = false) {
+        val idx = comp.getRoomIdx()
+        if (idx !in 0 .. 35) return
+        if (!force) {
+            rooms[idx]?.also {
+                if (room.name == null) mergeRooms(it, room)
+                else mergeRooms(room, it)
+                return
+            }
+        }
+        rooms[idx] = room
+
+        comp.getNeighboringDoors().forEach {
+            doors.getOrNull(it.getDoorIdx())?.also {
+                it.rooms.add(room)
+                room.doors.add(it)
+            }
+        }
+    }
+
+    fun reset() {
+        worldChangeCooldown = 5
+        foundEntrance = 5
+        wasInEntrance = false
+        rooms.fill(null)
+        doors.fill(null)
+        lastIdx = null
+        currentRoom = null
+        availablePos = findAvailablePos().asReversed()
+    }
+
+    fun scan(): Boolean {
+        foundEntrance--
+        if (availablePos.isEmpty()) return false
+
+        val startLen = availablePos.size
+        availablePos.removeIf { pos ->
+            val (wx, wz, cx, cz) = pos
+            val comp = pos.toComponent()
+            if (!WorldUtils.isChunkLoaded(wx, wz)) return@removeIf false
+
+            val roofHeight = getHighestY(wx, wz)
+            if (roofHeight < 0) return@removeIf true
+
+            // Door scan
+            if (comp.isValidDoor()) {
+                if (roofHeight != 0 && roofHeight < 85) {
+                    val door = DungeonDoor(pos)
+                    if (cz % 2 == 1) door.rotation = 0
+
+                    addDoor(door)
+                }
+                return@removeIf true
+            }
+            if (roofHeight <= 0) return@removeIf true
+
+            var room = DungeonRoom(mutableListOf(pos), roofHeight).scan()
+            addRoom(comp, room)
+            if (room.type == RoomTypes.ENTRANCE) {
+                room.explored = true
+                room.checkmark = CheckmarkTypes.NONE
+                foundEntrance = 0
+            } else if (foundEntrance > 0) return@removeIf false
+
+            comp.getNeighbors().forEach { (posRoom, posDoor) ->
+                val worldPos = posDoor.withWorld()
+                val nx0 = worldPos.wx
+                val nz0 = worldPos.wz
+
+                val heightBlock = WorldUtils.getBlockState(nx0, roofHeight, nz0) ?: return@forEach
+                val aboveHeightBlock = WorldUtils.getBlockState(nx0, roofHeight + 1, nz0) ?: return@forEach
+                val heightBlockId = WorldUtils.getBlockId(heightBlock.block)
+                val aboveHeightId = WorldUtils.getBlockId(aboveHeightBlock.block)
+
+                if (room.type == RoomTypes.ENTRANCE && heightBlockId != 0) {
+                    val block1Id = WorldUtils.getBlockState(nx0, 76, nz0) ?: return@forEach
+                    if (block1Id.isAir) return@forEach
+                    val doorIdx = posDoor.getDoorIdx()
+                    if (doorIdx in 0 .. 60) {
+                        val door = DungeonDoor(worldPos)
+                        door.type = DoorTypes.ENTRANCE
+                        addDoor(door)
+                    }
+                    return@forEach
+                }
+
+                if (heightBlockId == 0 || aboveHeightId != 0) return@forEach
+
+                val ndx = posRoom.getRoomIdx()
+                if (ndx !in 0 .. 35) return@forEach
+
+                val nroom = rooms[ndx]
+                if (nroom == null) {
+                    room.addComponent(posRoom)
+                    addRoom(posRoom, room)
+                    return@forEach
+                }
+
+                if (nroom.type == RoomTypes.ENTRANCE || nroom == room) return@forEach
+
+                mergeRooms(nroom, room)
+                room = nroom
+            }
+            return@removeIf true
+        }
+
+        return availablePos.size != startLen
+    }
+}
+
+package com.github.synnerz.devonian.api.dungeon
+
+import com.github.synnerz.devonian.Devonian
+import com.github.synnerz.devonian.api.ItemUtils
+import com.github.synnerz.devonian.api.Location
+import com.github.synnerz.devonian.api.Scheduler
+import com.github.synnerz.devonian.api.events.*
+import com.github.synnerz.devonian.commands.DevonianCommand
+import com.github.synnerz.devonian.features.dungeons.m7.M7Events
+import com.github.synnerz.devonian.utils.BasicState
+import com.github.synnerz.devonian.utils.State
+import com.github.synnerz.devonian.utils.StringUtils
+import net.minecraft.client.multiplayer.PlayerInfo
+import net.minecraft.core.component.DataComponents
+import net.minecraft.core.registries.BuiltInRegistries
+import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket
+import net.minecraft.world.entity.ambient.Bat
+import net.minecraft.world.entity.monster.zombie.Zombie
+import net.minecraft.world.item.alchemy.Potions
+import net.minecraft.world.level.block.entity.BlockEntityType
+import net.minecraft.world.level.block.entity.SkullBlockEntity
+import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.ceil
+import kotlin.math.max
+import kotlin.math.min
+
+object Dungeons {
+    private val playerInfoRegex = "^\\[\\d+] (\\w+)(?:.+?)? \\((\\w+) ?([IVXLCDM]+)?\\)$".toRegex()
+    private val dungeonFloorRegex = "^ * ⏣ The Catacombs \\((\\w+)\\)$".toRegex()
+    private val bossMessageRegex = "^\\[BOSS] (.+?): (.+?)$".toRegex()
+    private val disconnectRegex = "^ ☠ (\\w+) disconnected and became a ghost\\.$".toRegex()
+    private val reconnectRegex = "^ ☠ (\\w+) reconnected\\.$".toRegex()
+
+    private val clearedPercentRegex = "^Cleared: (\\d+)% \\(\\d+\\)$".toRegex()
+    private val timeElapsedRegex = "^Time Elapsed: (?:(\\d+)h)? ?(?:(\\d+)m)? ?(\\d+)s$".toRegex()
+    private val teamDeathsRegex = "^Team Deaths: (\\d+)$".toRegex()
+    private val cryptsRegex = "^ Crypts: (\\d+)$".toRegex()
+    private val secretsFoundPercentRegex = "^ Secrets Found: ([\\d.]+)%$".toRegex()
+    private val secretsFoundRegex = "^ Secrets Found: (\\d+)$".toRegex()
+    private val completedRoomsRegex = "^ Completed Rooms: (\\d+)$".toRegex()
+    private val openedRoomsRegex = "^ Opened Rooms: (\\d+)$".toRegex()
+    private val discoveriesRegex = "^Discoveries: (\\d+)$".toRegex()
+    private val puzzleNameRegex = "^ ([\\w ]+): \\[([✦✔✖])] ?\\(?(\\w+)?\\)?$".toRegex()
+    private val puzzlesCountRegex = "^Puzzles: \\((\\d+)\\)$".toRegex()
+
+    private var wasInDungeons = false
+    private val attemptGuessState = BasicState(false)
+
+    var selfPlayer = Devonian.minecraft.let { mc ->
+        val prof = mc.gameProfile
+        return@let DungeonPlayer(
+            prof.name,
+            PlayerInfo(prof, false),
+            DungeonClass.Unknown,
+            0,
+            false,
+        )
+    }
+    private var scannedSelf = false
+    val players = linkedMapOf(selfPlayer.name to selfPlayer)
+    val playerClasses = ConcurrentHashMap(mapOf(selfPlayer.name to selfPlayer.role))
+    val selfClass = BasicState(selfPlayer.role)
+    private var needReset = true
+    private var worldId = 0
+
+    var floor = FloorType.None
+    val floorState = BasicState(FloorType.None)
+
+    // [0, 100]
+    val clearedPercent = BasicState(0)
+    val timeElapsed = BasicState(0)
+    val deaths = BasicState(0)
+    val hasSpirit = BasicState(true)
+    val crypts = BasicState(0)
+
+    // [0, 100]
+    val secretsFoundPercent = BasicState(0.0)
+    val secretsFound = BasicState(0)
+    val completedRooms = BasicState(0)
+    val openedRooms = BasicState(0)
+    val discoveries = BasicState(0)
+    val totalPuzzles = BasicState(0)
+    val completedPuzzles = BasicState(0)
+    val mimicKilled = BasicState(false)
+    val princeKilled = BasicState(false)
+    val isPaul = BasicState(false)
+    val totalRoomSecrets = BasicState(0)
+
+    val inBoss = BasicState(false)
+    val bloodCleared = BasicState(false)
+    val started = BasicState(false)
+
+    private fun fuckEntrance(score: State<Double>) =
+        score.zip(floorState) { score, floor -> (score * (if (floor == FloorType.Entrance) 0.7 else 1.0)).toInt() }
+
+    // https://github.com/Skytils/SkytilsMod/blob/2e32484d011000f8d618401fe9675234969ab23e/mod/src/main/kotlin/gg/skytils/skytilsmod/features/impl/dungeons/ScoreCalculation.kt
+    val totalRoomHisto = mutableMapOf<Int, Int>()
+    val totalRooms = clearedPercent.zip(completedRooms) { clear, rooms ->
+        if (clear == 0 || rooms == 0) return@zip 0
+        val guess = (100.0 * rooms / clear + 0.5).toInt()
+        totalRoomHisto[guess] = (totalRoomHisto[guess] ?: 0) + 1
+        totalRoomHisto.toList().maxBy { it.second * 1000 + it.first }.first
+    }
+
+    val totalSecrets = secretsFound.zip(secretsFoundPercent) { found, percent ->
+        if (found == 0 || percent == 0.0) 0
+        else (100.0 / percent * found + 0.5).toInt()
+    }
+    val totalSecretsRequired = floorState.zip(totalSecrets) { floor, totalSecrets ->
+        ceil(floor.requiredPercent * totalSecrets).toInt()
+    }
+    // [0, 1]
+    val actualSecretPercent = secretsFound.zip(totalSecretsRequired) { found, total ->
+        if (total == 0) 0.0 else min(found.toDouble() / total, 1.0)
+    }
+    val secretScore = actualSecretPercent.map { it * 40.0 }
+
+    val actualCompletedRooms = BasicState(0)
+
+    // [0, 1]
+    val actualClearPercent = actualCompletedRooms.zip(totalRooms) { completed, total ->
+        if (total > 0) min(completed.toDouble() / total, 1.0) else 0.0
+    }
+    val roomClearScore = actualClearPercent.map { it * 60.0 }
+
+    val exploreScore = fuckEntrance(secretScore).zip(fuckEntrance(roomClearScore), Int::plus)
+
+    val deathPenalty = deaths.zip(hasSpirit) { deaths, spirit ->
+        if (deaths == 0) 0
+        else 2 * deaths - (if (spirit) 1 else 0)
+    }
+    val puzzlePenalty = completedPuzzles.zip(totalPuzzles) { completed, total ->
+        10 * (total - completed)
+    }
+    val totalPenalty = deathPenalty.zip(puzzlePenalty, Int::plus)
+    private val skillScore_ = actualClearPercent.zip(totalPenalty) { clear, penalty ->
+        max(20.0 + clear * 80.0 - penalty, 20.0)
+    }
+    val skillScore = fuckEntrance(skillScore_)
+
+    private val speedScore_ = timeElapsed.zip(floorState) { time, floor ->
+        val overtime = time - floor.requiredSpeed
+        when {
+            overtime < 12 -> 100.0
+            overtime < 120 -> 100.0 - overtime / 12.0
+            overtime < 360 -> 91.0 - overtime / 24.0
+            overtime < 660 -> 92.0 - overtime / 30.0
+            overtime < 3090 -> 86.5 - overtime / 40.0
+            else -> 0.0
+        }
+    }
+    val speedScore = fuckEntrance(speedScore_)
+
+    private val bonusScore_ = crypts.zip(mimicKilled) { crypts, mimic ->
+        min(crypts, 5) + (if (mimic) 2 else 0)
+    }.zip(princeKilled) { score, prince ->
+        score + (if (prince) 1 else 0)
+    }.zip(isPaul) { score, paul ->
+        score + (if (paul) 10 else 0).toDouble()
+    }
+    val bonusScore = fuckEntrance(bonusScore_)
+
+    val score = exploreScore.zip(skillScore, Int::plus)
+        .zip(speedScore, Int::plus)
+        .zip(bonusScore, Int::plus)
+
+    val _targetScore = bonusScore_.map { 40 - it }
+    val minSecrets = _targetScore.zip(totalSecretsRequired) { score, secrets -> ceil(score * secrets / 40.0).toInt() }
+    val remainingMinSecrets = minSecrets.zip(secretsFound) { total, found -> max(0, total - found) }
+
+    fun initialize() {
+        DungeonScanner.init()
+        M7Events.init()
+
+        DevonianCommand.command.subcommand("setfloor") { _, args ->
+            val f = FloorType.entries.find { it.shortName == args[0] } ?: return@subcommand 1
+            floor = f
+            floorState.value = f
+            return@subcommand 0
+        }.string("floor").suggest("floor", "E", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "M1", "M2", "M3", "M4", "M5", "M6", "M7")
+    }
+
+    init {
+        EventBus.on<TabUpdateEvent> { event ->
+            event.matches(cryptsRegex)?.let {
+                crypts.value = it[0].toInt()
+                return@on
+            }
+
+            event.matches(teamDeathsRegex)?.let {
+                deaths.value = it[0].toInt()
+                return@on
+            }
+
+            event.matches(secretsFoundPercentRegex)?.let {
+                secretsFoundPercent.value = it[0].toDouble()
+                return@on
+            }
+
+            event.matches(completedRoomsRegex)?.let {
+                completedRooms.value = it[0].toInt()
+                actualCompletedRooms.value = it[0].toInt() +
+                    (if (inBoss.value) 0 else 1) +
+                    (if (bloodCleared.value) 0 else 1)
+                return@on
+            }
+
+            event.matches(secretsFoundRegex)?.let {
+                secretsFound.value = it[0].toInt()
+                return@on
+            }
+
+            event.matches(openedRoomsRegex)?.let {
+                openedRooms.value = it[0].toInt()
+                return@on
+            }
+
+            event.matches(discoveriesRegex)?.let {
+                discoveries.value = it[0].toInt()
+                return@on
+            }
+
+            event.matches(puzzlesCountRegex)?.let {
+                totalPuzzles.value = it[0].toInt()
+                return@on
+            }
+
+            event.matches(puzzleNameRegex)?.let {
+                if (it[1].isEmpty() || it[1] != "✔") return@on
+                completedPuzzles.value = min(completedPuzzles.value + 1, totalPuzzles.value)
+                return@on
+            }
+
+            val match = event.matches(playerInfoRegex) ?: return@on
+            val (name, role) = match
+
+            val id = worldId
+            Scheduler.scheduleTask {
+                if (id != worldId) return@scheduleTask
+                val player = players.getOrPut(name) {
+                    playerClasses[name] = DungeonClass.Unknown
+                    DungeonPlayer(
+                        name,
+                        Devonian.minecraft.connection?.getPlayerInfo(name),
+                        DungeonClass.Unknown,
+                        0,
+                        false
+                    )
+                }
+                // nick
+                if (players.size > 1 && !scannedSelf) {
+                    players.remove(selfPlayer.name)
+                    playerClasses.remove(selfPlayer.name)
+                    player.profileInfo = selfPlayer.profileInfo
+                    selfPlayer = player
+                }
+                scannedSelf = true
+
+                if (role == "DEAD") player.isDead = true
+                else {
+                    player.isDead = false
+                    player.isDisconnected = false
+                    val c = DungeonClass.from(role)
+                    player.role = c
+                    playerClasses[name] = c
+                    if (players.firstEntry().key == player.name) selfClass.value = c
+
+                    val level = match.getOrNull(2)
+                    if (level != null) player.classLevel = StringUtils.parseRoman(level)
+                }
+            }
+        }.setEnabled(Location.stateInArea("catacombs"))
+
+        EventBus.on<TickEvent> {
+            val mc = Devonian.minecraft
+
+            // TODO: check when each player is being updated by the server
+            // players.forEach { it.value.tick() }
+            selfPlayer.tick()
+
+            mc.level?.players()?.forEach {
+                val ping = mc.connection?.getPlayerInfo(it.uuid)?.latency ?: return@forEach
+                if (ping == -1) return@forEach
+
+                val player = players[it.name.string] ?: return@forEach
+                player.entity = it
+            }
+        }.setEnabled(Location.stateInArea("catacombs"))
+
+        EventBus.on<AreaEvent> { event ->
+            val area = event.area
+            if (area == "kuudra") wasInDungeons = false
+            if (area == null || area != "catacombs") {
+                if (!needReset) return@on
+                DungeonScanner.reset()
+                DungeonMapScanner.reset()
+                reset()
+                needReset = false
+            } else {
+                needReset = true
+                wasInDungeons = true
+            }
+        }
+
+        EventBus.on<WorldChangeEvent> {
+            DungeonScanner.reset()
+            DungeonMapScanner.reset()
+            reset()
+            needReset = false
+        }
+
+        EventBus.on<ScoreboardEvent> { event ->
+            event.matches(dungeonFloorRegex)?.let {
+                floor = FloorType.from(it[0])
+                floorState.value = floor
+                DungeonEvent.FloorEnter(floor).post()
+                return@on
+            }
+            if (Location.area != "catacombs") return@on
+            val matchesTime = event.matches(timeElapsedRegex)
+            if (matchesTime != null) {
+                val hours = matchesTime[0].ifEmpty { "0" }.toInt()
+                val minutes = matchesTime[1].ifEmpty { "0" }.toInt()
+                val seconds = matchesTime[2].ifEmpty { "0" }.toInt()
+                timeElapsed.value = hours * 3600 + minutes * 60 + seconds
+                return@on
+            }
+
+            val match = event.matches(clearedPercentRegex) ?: return@on
+            clearedPercent.value = match[0].toInt()
+        }
+
+        EventBus.on<ChatChannelEvent.PartyChatEvent> { event ->
+            when (event.userMessage) {
+                "Mimic Killed!",
+                "\$SKYTILS-DUNGEON-SCORE-MIMIC$"
+                    -> mimicKilled.value = true
+
+                "Prince Killed!"
+                    -> princeKilled.value = true
+            }
+        }.setEnabled(Location.stateInArea("catacombs"))
+
+        EventBus.on<ChatEvent> { event ->
+            Stages.Root.onChat(event.message)
+
+            if (event.message == "[NPC] Mort: Here, I found this map when I first entered the dungeon.") {
+                started.value = true
+                wasInDungeons = false
+                DungeonEvent.RunStarted().post()
+                return@on
+            }
+
+            if (event.message == "A Prince falls. +1 Bonus Score") {
+                princeKilled.value = true
+                DungeonEvent.PrinceKilled().post()
+                return@on
+            }
+
+            event.matches(disconnectRegex)?.let {
+                if (it[0] == Devonian.minecraft.gameProfile.name) wasInDungeons = true
+                else players.remove(it[0])?.let { p ->
+                    players[it[0]] = p
+                    p.isDisconnected = true
+                }
+                return@on
+            }
+
+            val (name, message) = event.matches(bossMessageRegex) ?: return@on
+            val boss = DungeonBoss.from(name) ?: return@on
+            if (boss == DungeonBoss.Scarf && floor.floorNum != 2) return@on
+
+            DungeonEvent.BossMessageEvent(boss, message).post()
+            if (boss != DungeonBoss.Watcher) {
+                inBoss.value = true
+                DungeonEvent.BossRoomEnter(boss, floor).post()
+            }
+            else if (message == "You have proven yourself. You may pass.") bloodCleared.value = true
+        }.setEnabled(Location.stateInArea("catacombs"))
+
+        EventBus.on<EntityDeathEvent> { event ->
+            val entity = event.entity
+            if (entity is Bat) {
+                if (entity.maxHealth != 100f) return@on
+                DungeonEvent.SecretBat(entity.x, entity.y, entity.z).post()
+                return@on
+            }
+            if (entity !is Zombie) return@on
+            // surely nothing can go wrong here
+            if (!entity.isBaby) return@on
+
+            mimicKilled.value = true
+            DungeonEvent.MimicKilled().post()
+        }.setEnabled(Location.stateInArea("catacombs"))
+
+        EventBus.on<ItemPickupEvent> { event ->
+            val item = event.entity.item
+            val id = ItemUtils.skyblockId(item) ?: return@on
+
+            if (!DungeonEvent.SecretPickup.SECRET_ITEMS.contains(id)) return@on
+            if (id == "POTION") {
+                val type = item.get(DataComponents.POTION_CONTENTS)
+                if (type?.potion?.get() != Potions.HEALING) return@on
+            }
+
+            val entity = event.entity
+
+            DungeonEvent.SecretPickup(entity.xo, entity.yo, entity.zo).post()
+        }.setEnabled(Location.stateInArea("catacombs"))
+
+        EventBus.on<PrePacketSentEvent> { event ->
+            val packet = event.packet
+            if (packet !is ServerboundUseItemOnPacket) return@on
+
+            val minecraft = Devonian.minecraft
+            val result = packet.hitResult
+            val pos = result.blockPos
+            val blockState = minecraft.level?.getBlockState(pos) ?: return@on
+            val registryName = BuiltInRegistries.BLOCK.getKey(blockState.block)
+
+            if (registryName.path == "player_head" && blockState.hasBlockEntity()) {
+                val entityBlock = minecraft.level?.getBlockEntity(pos) ?: return@on
+                if (entityBlock.type != BlockEntityType.SKULL) return@on
+                val skullBlock = entityBlock as SkullBlockEntity
+                val owner = skullBlock.ownerProfile ?: return@on
+                val id = owner.partialProfile().id ?: return@on
+
+                if (!DungeonEvent.SecretClicked.SECRET_SKULLS.contains("$id")) return@on
+
+                DungeonEvent.SecretClicked(
+                    pos.x.toDouble(),
+                    pos.y.toDouble(),
+                    pos.z.toDouble(),
+                    true,
+                    DungeonEvent.SecretClicked.isRedstonekey("$id")
+                ).post()
+                return@on
+            }
+            if (!DungeonEvent.SecretClicked.SECRET_BLOCKS.contains("${registryName.namespace}:${registryName.path}"))
+                return@on
+            DungeonEvent.SecretClicked(pos.x.toDouble(), pos.y.toDouble(), pos.z.toDouble(), isLever = registryName.path == "lever").post()
+        }.setEnabled(Location.stateInArea("catacombs"))
+
+        EventBus.on<SoundPlayEvent> { event ->
+            if (event.volume != 0.1f) return@on
+            if (!DungeonEvent.SecretBatSound.SECRET_BATS.contains(event.sound)) return@on
+            val cancel = DungeonEvent.SecretBatSound(event.x, event.y, event.z).post()
+            if (!cancel) return@on
+            event.cancel()
+        }.setEnabled(Location.stateInArea("catacombs"))
+
+        EventBus.on<ChatEvent> { event ->
+            val (name) = event.matches(reconnectRegex) ?: return@on
+            if (name != Devonian.minecraft.gameProfile.name) return@on
+
+            // kuudra uses the same message
+            // this also means if you crash and rejoin this will fail
+            if (!wasInDungeons) return@on
+
+            attemptGuessState.value = true
+            started.value = true
+            needReset = true
+            Stages.Clear.start()
+            Location.changeArea("catacombs")
+        }
+
+        EventBus.on<DungeonEvent.BossMessageEvent> { event ->
+            inBoss.value = event.boss != DungeonBoss.Watcher
+            bloodCleared.value = event.boss != DungeonBoss.Watcher
+            if (event.boss != DungeonBoss.Watcher) attemptGuessState.value = false
+            when (event.boss) {
+                DungeonBoss.Watcher -> Stages.WatcherClear.start()
+                DungeonBoss.Bonzo -> Stages.F1.start()
+                DungeonBoss.Scarf -> Stages.F2.start()
+                DungeonBoss.Professor -> Stages.F3.start()
+                DungeonBoss.Thorn -> Stages.F4.start()
+                DungeonBoss.Livid -> Stages.F5.start()
+                DungeonBoss.Sadan -> Stages.F6.start()
+                DungeonBoss.Maxor -> Stages.Maxor.start()
+                DungeonBoss.Storm -> Stages.Storm.start()
+                DungeonBoss.Goldor -> Stages.Goldor.start()
+                DungeonBoss.Necron -> Stages.Necron.start()
+                DungeonBoss.WitherKing -> Stages.WitherKing.start()
+            }
+        }.setEnabled(attemptGuessState)
+    }
+
+    private fun reset() {
+        attemptGuessState.value = false
+
+        selfPlayer = Devonian.minecraft.let { mc ->
+            val prof = mc.gameProfile
+            return@let DungeonPlayer(
+                prof.name,
+                PlayerInfo(prof, false),
+                DungeonClass.Unknown,
+                0,
+                false,
+            )
+        }
+        scannedSelf = false
+        players.clear()
+        players[selfPlayer.name] = selfPlayer
+        playerClasses.clear()
+        playerClasses[selfPlayer.name] = selfPlayer.role
+        selfClass.value = selfPlayer.role
+        worldId++
+
+        floor = FloorType.None
+        Stages.Root.reset()
+
+        clearedPercent.value = 0
+        timeElapsed.value = 0
+        deaths.value = 0
+        hasSpirit.value = true
+        crypts.value = 0
+        secretsFoundPercent.value = 0.0
+        secretsFound.value = 0
+        completedRooms.value = 0
+        openedRooms.value = 0
+        discoveries.value = 0
+        totalPuzzles.value = 0
+        completedPuzzles.value = 0
+        mimicKilled.value = false
+        princeKilled.value = false
+        inBoss.value = false
+        bloodCleared.value = false
+        started.value = false
+        totalRoomSecrets.value = 0
+
+        totalRoomHisto.clear()
+    }
+
+    enum class DungeonBoss(val displayName: String) {
+        Watcher("The Watcher"),
+        Bonzo("Bonzo"),
+        Scarf("Scarf"),
+        Professor("The Professor"),
+        Thorn("Thorn"),
+        Livid("Livid"),
+        Sadan("Sadan"),
+        Maxor("Maxor"),
+        Storm("Storm"),
+        Goldor("Goldor"),
+        Necron("Necron"),
+        WitherKing("Wither King");
+
+        companion object {
+            private val map = entries.associateBy { it.displayName }
+            fun from(name: String) = map[name]
+        }
+    }
+}
+
+package com.github.synnerz.devonian.features.dungeons.map
+
+import com.github.synnerz.devonian.Devonian
+import com.github.synnerz.devonian.api.ItemUtils
+import com.github.synnerz.devonian.api.Scheduler
+import com.github.synnerz.devonian.api.bufimgrenderer.BufferedImageRenderer
+import com.github.synnerz.devonian.api.bufimgrenderer.BufferedImageUploader
+import com.github.synnerz.devonian.api.dungeon.*
+import com.github.synnerz.devonian.api.events.RenderOverlayEvent
+import com.github.synnerz.devonian.api.events.WorldChangeEvent
+import com.github.synnerz.devonian.commands.DevonianCommand
+import com.github.synnerz.devonian.config.Categories
+import com.github.synnerz.devonian.hud.HudFeature
+import com.github.synnerz.devonian.hud.texthud.StylizedTextHud
+import com.github.synnerz.devonian.hud.texthud.StylizedTextHud.*
+import com.github.synnerz.devonian.mixin.accessor.ScreenAccessor
+import com.github.synnerz.devonian.utils.BasicState
+import com.github.synnerz.devonian.utils.BoundingBox
+import com.github.synnerz.devonian.utils.math.MathUtils
+import com.github.synnerz.devonian.utils.render.states.QuadRenderState
+import com.github.synnerz.devonian.utils.render.states.TexturedQuadRenderState
+import com.mojang.blaze3d.textures.GpuSampler
+import com.mojang.blaze3d.textures.GpuTextureView
+import net.minecraft.client.gui.GuiGraphics
+import net.minecraft.client.gui.components.ChatComponent
+import net.minecraft.client.gui.components.PlayerFaceRenderer.*
+import net.minecraft.client.gui.navigation.ScreenRectangle
+import net.minecraft.client.gui.render.TextureSetup
+import net.minecraft.client.renderer.RenderPipelines
+import net.minecraft.resources.Identifier
+import org.joml.Matrix3x2f
+import java.awt.Color
+import kotlin.math.PI
+import kotlin.math.ceil
+import kotlin.math.cos
+import kotlin.math.sin
+
+object DungeonMap : HudFeature(
+    "dungeonMap",
+    "",
+    Categories.DUNGEON_MAP,
+    "catacombs",
+    subcategory = "Toggle",
+) {
+    private val SETTING_MC_TEXT = addSwitch(
+        "mcText",
+        true,
+        "may negatively impact performance",
+        "Use MC Font Renderer",
+        subcategory = "Style",
+    )
+    private val SETTING_FUNNY = addButton(
+        {
+            Scheduler.scheduleTask {
+                minecraft.openChatScreen(ChatComponent.ChatMethod.COMMAND)
+                Scheduler.scheduleTask(2) {
+                    (minecraft.screen as ScreenAccessor?)?.insertText("/dv font Mojangles", true)
+                }
+            }
+        },
+        description = ":(",
+        displayName = "\"guys how do i change map font\"",
+        subcategory = "Style",
+    )
+    private val SETTING_DOC_STYLE = addButton(
+        {
+            SETTING_DOOR_SIZE.set(0.36)
+            SETTING_MARKER_SCALE.set(2.4)
+            SETTING_HEAD_SCALE.set(2.46)
+            SETTING_NAME_SCALE.set(2.4)
+            SETTING_TEXT_SIZE.set(1.27)
+            SETTING_MAP_BORDER.set(0.0)
+            SETTING_MAP_PADDING.set(0.0)
+            SETTING_ROOM_SIZE.set(0.8)
+            SETTING_ICON_SIZE.set(0.6) // not used
+            SETTING_HIDDEN_ROOM_DARKEN.set(0.7)
+            SETTING_TEXT_ALIGNMENT.set(5)
+            SETTING_ICON_ALIGNMENT.set(0) // not used
+            SETTING_TEXT_SHADOW.set(2)
+            SETTING_ICON_STYLE.set(0) // not used
+            SETTING_RENDER_NAMES_ONLY_LEAP.set(false)
+            SETTING_USE_PLAYER_HEADS.set(true)
+            SETTING_USE_MARKER_SELF.set(false)
+            SETTING_RENDER_ROOM_NAMES.set(false)
+            SETTING_RENDER_PUZZLE_ICON.set(false)
+            SETTING_RENDER_PUZZLE_NAME.set(true)
+            SETTING_NORMAL_DOOR_DYNAMIC.set(true)
+            SETTING_RENDER_FAIRY_CHECK.set(false)
+            SETTING_RENDER_ROOM_NAMES_NOT_EFB.set(false)
+            SETTING_DONT_RENDER_YELLOW_NAME.set(false)
+            SETTING_RENDER_NAMES.set(true)
+            SETTING_MC_TEXT.set(true)
+            SETTING_USE_CLASS_NAME.set(true)
+            SETTING_COLOR_NAME_BY_CLASS.set(true)
+            SETTING_COLOR_MARKER_BY_CLASS.set(true)
+            SETTING_RENDER_CHECKMARK.set(false)
+            SETTING_RENDER_SECRET_COUNT.set(true)
+            SETTING_COLOR_ROOM_TEXT.set(true)
+            SETTING_ROTATE.set(false)
+            SETTING_DONT_RENDER_CHECK_IF_NAME.set(false)
+            SETTING_DONT_RENDER_SECRET_1.set(false)
+            SETTING_CHECK_IF_GREEN.set(false)
+            SETTING_RENDER_CHECK_IF_0.set(true)
+            SETTING_MAP_BACKGROUND_COLOR.set(50462977)
+        },
+        "Set",
+        "Changes the majority of settings to fit a style that docilelm (aka doc) uses NOTE: room colors are not changed",
+        displayName = "Doc Style",
+        subcategory = "Presets"
+    )
+    private val SETTING_LEG_STYLE = addButton(
+        {
+            SETTING_DOOR_SIZE.set(0.4)
+            SETTING_MARKER_SCALE.set(2.2)
+            SETTING_HEAD_SCALE.set(2.5)
+            SETTING_NAME_SCALE.set(1.9)
+            SETTING_TEXT_SIZE.set(1.08)
+            SETTING_MAP_BORDER.set(0.0)
+            SETTING_MAP_PADDING.set(0.0)
+            SETTING_ROOM_SIZE.set(0.8)
+            SETTING_ICON_SIZE.set(0.4) // not used
+            SETTING_HIDDEN_ROOM_DARKEN.set(0.61)
+            SETTING_TEXT_ALIGNMENT.set(4)
+            SETTING_ICON_ALIGNMENT.set(0) // not used
+            SETTING_TEXT_SHADOW.set(2)
+            SETTING_ICON_STYLE.set(0) // not used
+            SETTING_RENDER_NAMES_ONLY_LEAP.set(true)
+            SETTING_USE_PLAYER_HEADS.set(true)
+            SETTING_USE_MARKER_SELF.set(true)
+            SETTING_RENDER_ROOM_NAMES.set(true)
+            SETTING_RENDER_PUZZLE_ICON.set(false)
+            SETTING_RENDER_PUZZLE_NAME.set(true)
+            SETTING_NORMAL_DOOR_DYNAMIC.set(false)
+            SETTING_RENDER_FAIRY_CHECK.set(false)
+            SETTING_RENDER_ROOM_NAMES_NOT_EFB.set(true)
+            SETTING_DONT_RENDER_YELLOW_NAME.set(false)
+            SETTING_RENDER_NAMES.set(true)
+            SETTING_MC_TEXT.set(false)
+            SETTING_USE_CLASS_NAME.set(true)
+            SETTING_COLOR_NAME_BY_CLASS.set(true)
+            SETTING_COLOR_MARKER_BY_CLASS.set(true)
+            SETTING_RENDER_CHECKMARK.set(false)
+            SETTING_RENDER_SECRET_COUNT.set(true)
+            SETTING_COLOR_ROOM_TEXT.set(true)
+            SETTING_ROTATE.set(false)
+            SETTING_DONT_RENDER_CHECK_IF_NAME.set(true)
+            SETTING_DONT_RENDER_SECRET_1.set(true)
+            SETTING_CHECK_IF_GREEN.set(false)
+            SETTING_RENDER_CHECK_IF_0.set(false)
+            SETTING_MAP_BACKGROUND_COLOR.set(772723641)
+        },
+        "Set",
+        "Changes the majority of settings to fit a style that legendary_jg (aka leg) uses NOTE: room colors are not changed",
+        displayName = "Leg Style",
+        subcategory = "Presets"
+    )
+    private val SETTING_DEFAULT_STYLE = addButton(
+        {
+            SETTING_DOOR_SIZE.set(0.31)
+            SETTING_MARKER_SCALE.set(3.16)
+            SETTING_HEAD_SCALE.set(2.5)
+            SETTING_NAME_SCALE.set(2.4)
+            SETTING_TEXT_SIZE.set(1.33)
+            SETTING_MAP_BORDER.set(3.53)
+            SETTING_MAP_PADDING.set(0.12)
+            SETTING_ROOM_SIZE.set(0.8)
+            SETTING_ICON_SIZE.set(0.6) // not used
+            SETTING_HIDDEN_ROOM_DARKEN.set(0.7)
+            SETTING_TEXT_ALIGNMENT.set(5)
+            SETTING_ICON_ALIGNMENT.set(0) // not used
+            SETTING_TEXT_SHADOW.set(1)
+            SETTING_ICON_STYLE.set(0) // not used
+            SETTING_RENDER_NAMES_ONLY_LEAP.set(true)
+            SETTING_USE_PLAYER_HEADS.set(true)
+            SETTING_USE_MARKER_SELF.set(true)
+            SETTING_RENDER_ROOM_NAMES.set(true)
+            SETTING_RENDER_PUZZLE_ICON.set(false)
+            SETTING_RENDER_PUZZLE_NAME.set(true)
+            SETTING_NORMAL_DOOR_DYNAMIC.set(false)
+            SETTING_RENDER_FAIRY_CHECK.set(false)
+            SETTING_RENDER_ROOM_NAMES_NOT_EFB.set(true)
+            SETTING_DONT_RENDER_YELLOW_NAME.set(false)
+            SETTING_RENDER_NAMES.set(true)
+            SETTING_MC_TEXT.set(true)
+            SETTING_USE_CLASS_NAME.set(false)
+            SETTING_COLOR_NAME_BY_CLASS.set(false)
+            SETTING_COLOR_MARKER_BY_CLASS.set(false)
+            SETTING_RENDER_CHECKMARK.set(false)
+            SETTING_RENDER_SECRET_COUNT.set(true)
+            SETTING_COLOR_ROOM_TEXT.set(true)
+            SETTING_ROTATE.set(false)
+            SETTING_DONT_RENDER_CHECK_IF_NAME.set(false)
+            SETTING_DONT_RENDER_SECRET_1.set(false)
+            SETTING_CHECK_IF_GREEN.set(false)
+            SETTING_RENDER_CHECK_IF_0.set(false)
+            SETTING_MAP_BACKGROUND_COLOR.set(1577189633)
+
+            SETTING_ROOM_ENTRANCE_COLOR.set(Color(20, 133, 0, 255).rgb)
+            SETTING_ROOM_NORMAL_COLOR.set(Color(107, 58, 17, 255).rgb)
+            SETTING_ROOM_MINIBOSS_COLOR.set(Color(107, 58, 17, 255).rgb)
+            SETTING_NORMAL_DOOR_COLOR.set(Color(92, 52, 14, 255).rgb)
+            SETTING_ROOM_PUZZLE_COLOR.set(Color(117, 0, 133, 255).rgb)
+            SETTING_ROOM_YELLOW_COLOR.set(Color(254, 223, 0, 255).rgb)
+            SETTING_ROOM_FAIRY_COLOR.set(Color(224, 0, 255, 255).rgb)
+            SETTING_ROOM_BLOOD_COLOR.set(Color(255, 0, 0, 255).rgb)
+            SETTING_ROOM_TRAP_COLOR.set(Color(216, 127, 51, 255).rgb)
+            SETTING_ROOM_UNKNOWN_COLOR.set(Color(65, 65, 65, 255).rgb)
+            SETTING_DOOR_WITHER_COLOR.set(Color(0, 0, 0, 255).rgb)
+        },
+        "Set",
+        "default",
+        displayName = "Default Style",
+        subcategory = "Presets"
+    )
+    private val SETTING_USE_PLAYER_HEADS = addSwitch(
+        "playerHeads",
+        true,
+        "",
+        "Render Player Heads",
+        subcategory = "Markers",
+    )
+    private val SETTING_USE_MARKER_SELF = addSwitch(
+        "markerSelf",
+        true,
+        "",
+        "Use Marker for Self",
+        subcategory = "Markers",
+    )
+    private val SETTING_RENDER_NAMES = addSwitch(
+        "renderNames",
+        true,
+        "Render player names above marker.",
+        "Render Names",
+        subcategory = "Markers",
+    )
+    private val SETTING_RENDER_NAMES_ONLY_LEAP = addSwitch(
+        "namesRequireLeap",
+        true,
+        "Only render player names when holding leap.",
+        "Render Names When Holding Leap",
+        subcategory = "Markers",
+    )
+    private val SETTING_USE_CLASS_NAME = addSwitch(
+        "useClassName",
+        false,
+        "Render the class name instead of the player name.",
+        "Render Class Name",
+        subcategory = "Markers",
+    )
+    private val SETTING_COLOR_NAME_BY_CLASS = addSwitch(
+        "colorNameClass",
+        false,
+        "Colors the player names by their respective class.",
+        "Color Player Names",
+        subcategory = "Markers",
+    )
+    private val SETTING_COLOR_MARKER_BY_CLASS = addSwitch(
+        "colorMarkerClass",
+        false,
+        "Colors the player marker by their respective class.",
+        "Color Player Markers",
+        subcategory = "Markers",
+    )
+    private val SETTING_NAME_SCALE = addDecimalSlider(
+        "nameScale",
+        2.4,
+        0.0, 10.0,
+        "",
+        "Player Name Scale",
+        subcategory = "Markers",
+    )
+    private val SETTING_MARKER_SCALE = addDecimalSlider(
+        "markerScale",
+        3.16,
+        0.0, 10.0,
+        "",
+        "Marker Scale",
+        subcategory = "Markers",
+    )
+    private val SETTING_HEAD_SCALE = addDecimalSlider(
+        "headScale",
+        2.5,
+        0.0, 10.0,
+        "",
+        "Head Scale",
+        subcategory = "Markers"
+    )
+    private val SETTING_PRESET_HYPIXEL_COLORS = addButton(
+        {
+            SETTING_ROOM_ENTRANCE_COLOR.set(Color(0, 124, 0, 255).rgb)
+            SETTING_ROOM_NORMAL_COLOR.set(Color(114, 67, 27, 255).rgb)
+            SETTING_ROOM_MINIBOSS_COLOR.set(Color(114, 67, 27, 255).rgb)
+            SETTING_NORMAL_DOOR_COLOR.set(Color(114, 67, 27, 255).rgb)
+            SETTING_ROOM_PUZZLE_COLOR.set(Color(178, 76, 216, 255).rgb)
+            SETTING_ROOM_YELLOW_COLOR.set(Color(229, 229, 51, 255).rgb)
+            SETTING_ROOM_FAIRY_COLOR.set(Color(242, 127, 165, 255).rgb)
+            SETTING_ROOM_BLOOD_COLOR.set(Color(255, 0, 0, 255).rgb)
+            SETTING_ROOM_TRAP_COLOR.set(Color(216, 127, 51, 255).rgb)
+            SETTING_ROOM_UNKNOWN_COLOR.set(Color(65, 65, 65, 255).rgb)
+            SETTING_DOOR_WITHER_COLOR.set(Color(0, 0, 0, 255).rgb)
+        },
+        "Set",
+        "",
+        "Hypixel Colors",
+        subcategory = "Colors",
+    )
+    private val SETTING_PRESET_LEGALMAP_COLORS = addButton(
+        {
+            SETTING_ROOM_ENTRANCE_COLOR.set(Color(20, 133, 0, 255).rgb)
+            SETTING_ROOM_NORMAL_COLOR.set(Color(107, 58, 17, 255).rgb)
+            SETTING_ROOM_MINIBOSS_COLOR.set(Color(107, 58, 17, 255).rgb)
+            SETTING_NORMAL_DOOR_COLOR.set(Color(92, 52, 14, 255).rgb)
+            SETTING_ROOM_PUZZLE_COLOR.set(Color(117, 0, 133, 255).rgb)
+            SETTING_ROOM_YELLOW_COLOR.set(Color(254, 223, 0, 255).rgb)
+            SETTING_ROOM_FAIRY_COLOR.set(Color(224, 0, 255, 255).rgb)
+            SETTING_ROOM_BLOOD_COLOR.set(Color(255, 0, 0, 255).rgb)
+            SETTING_ROOM_TRAP_COLOR.set(Color(216, 127, 51, 255).rgb)
+            SETTING_ROOM_UNKNOWN_COLOR.set(Color(65, 65, 65, 255).rgb)
+            SETTING_DOOR_WITHER_COLOR.set(Color(0, 0, 0, 255).rgb)
+        },
+        "Set",
+        "",
+        "LegalMap Colors",
+        subcategory = "Colors",
+    )
+    private val SETTING_PRESET_BETTERMAP_COLORS = addButton(
+        {
+            SETTING_ROOM_ENTRANCE_COLOR.set(Color(0, 123, 0, 255).rgb)
+            SETTING_ROOM_NORMAL_COLOR.set(Color(107, 58, 17, 255).rgb)
+            SETTING_ROOM_MINIBOSS_COLOR.set(Color(85, 51, 19).rgb)
+            SETTING_NORMAL_DOOR_COLOR.set(Color(85, 51, 19, 255).rgb)
+            SETTING_ROOM_PUZZLE_COLOR.set(Color(176, 75, 213, 255).rgb)
+            SETTING_ROOM_YELLOW_COLOR.set(Color(226, 226, 50, 255).rgb)
+            SETTING_ROOM_FAIRY_COLOR.set(Color(239, 126, 163, 255).rgb)
+            SETTING_ROOM_BLOOD_COLOR.set(Color(255, 0, 0, 255).rgb)
+            SETTING_ROOM_TRAP_COLOR.set(Color(213, 126, 50, 255).rgb)
+            SETTING_ROOM_UNKNOWN_COLOR.set(Color(64, 64, 64, 255).rgb)
+            SETTING_DOOR_WITHER_COLOR.set(Color(0, 0, 0, 255).rgb)
+        },
+        "Set",
+        "",
+        "BetterMap Colors",
+        subcategory = "Colors",
+    )
+    private val SETTING_PRESET_CATLAS_COLORS = addButton(
+        {
+            SETTING_ROOM_ENTRANCE_COLOR.set(Color(20, 133, 0, 255).rgb)
+            SETTING_ROOM_NORMAL_COLOR.set(Color(107, 58, 17, 255).rgb)
+            SETTING_ROOM_MINIBOSS_COLOR.set(Color(107, 58, 17, 255).rgb)
+            SETTING_NORMAL_DOOR_COLOR.set(Color(92, 52, 14, 255).rgb)
+            SETTING_ROOM_PUZZLE_COLOR.set(Color(117, 0, 133, 255).rgb)
+            SETTING_ROOM_YELLOW_COLOR.set(Color(254, 223, 0, 255).rgb)
+            SETTING_ROOM_FAIRY_COLOR.set(Color(224, 0, 255, 255).rgb)
+            SETTING_ROOM_BLOOD_COLOR.set(Color(255, 0, 0, 255).rgb)
+            SETTING_ROOM_TRAP_COLOR.set(Color(216, 127, 51, 255).rgb)
+            SETTING_ROOM_UNKNOWN_COLOR.set(Color(65, 65, 65, 255).rgb)
+            SETTING_DOOR_WITHER_COLOR.set(Color(0, 0, 0, 255).rgb)
+        },
+        "Set",
+        "jokes on you, it is the same as LegalMap",
+        "Catlas Colors",
+        subcategory = "Colors",
+    )
+    private val SETTING_MAP_BACKGROUND_COLOR = addColorPicker(
+        "backgroundColor",
+        1577189633,
+        "",
+        "Map Background Color",
+        subcategory = "Colors",
+    )
+    private val SETTING_MAP_PADDING = addDecimalSlider(
+        "padding",
+        0.12,
+        0.0, 2.0,
+        "empty space around the outside of the map, measured in room widths",
+        "Map Padding",
+        subcategory = "Style",
+    )
+    private val SETTING_MAP_BORDER = addDecimalSlider(
+        "border",
+        3.55,
+        0.0, 20.0,
+        "",
+        "Map Border Width",
+        subcategory = "Style",
+    )
+    private val SETTING_MAP_BORDER_COLOR = addColorPicker(
+        "borderColor",
+        Color(0).rgb,
+        "",
+        "Map Border Color",
+        subcategory = "Colors",
+    )
+    private val SETTING_ROOM_ENTRANCE_COLOR = addColorPicker(
+        "roomEntranceColor",
+        Color(20, 133, 0).rgb,
+        "",
+        "Entrance Room Color",
+        subcategory = "Colors",
+    )
+    private val SETTING_ROOM_NORMAL_COLOR = addColorPicker(
+        "roomNormalColor",
+        Color(107, 58, 17).rgb,
+        "",
+        "Normal Room Color",
+        subcategory = "Colors",
+    )
+    private val SETTING_ROOM_MINIBOSS_COLOR = addColorPicker(
+        "roomMinibossColor",
+        Color(107, 58, 17).rgb,
+        "(as in: has a miniboss, not yellow)",
+        "Miniboss Room Color",
+        subcategory = "Colors",
+    )
+    private val SETTING_ROOM_FAIRY_COLOR = addColorPicker(
+        "roomFairyColor",
+        Color(224, 0, 255).rgb,
+        "",
+        "Fairy Room Color",
+        subcategory = "Colors",
+    )
+    private val SETTING_ROOM_BLOOD_COLOR = addColorPicker(
+        "roomBloodColor",
+        Color(255, 0, 0).rgb,
+        "",
+        "Blood Room Color",
+        subcategory = "Colors",
+    )
+    private val SETTING_ROOM_PUZZLE_COLOR = addColorPicker(
+        "roomPuzzleColor",
+        Color(117, 0, 133).rgb,
+        "",
+        "Puzzle Room Color",
+        subcategory = "Colors",
+    )
+    private val SETTING_ROOM_TRAP_COLOR = addColorPicker(
+        "roomTrapColor",
+        Color(216, 127, 51).rgb,
+        "",
+        "Trap Room Color",
+        subcategory = "Colors",
+    )
+    private val SETTING_ROOM_YELLOW_COLOR = addColorPicker(
+        "roomYellowColor",
+        Color(254, 223, 0).rgb,
+        "",
+        "Yellow Room Color",
+        subcategory = "Colors",
+    )
+    private val SETTING_ROOM_RARE_COLOR = addColorPicker(
+        "roomRareColor",
+        Color(255, 203, 89).rgb,
+        "",
+        "Rare Room Color",
+        subcategory = "Colors",
+    )
+    private val SETTING_ROOM_UNKNOWN_COLOR = addColorPicker(
+        "roomUnknownColor",
+        Color(65, 65, 65).rgb,
+        "",
+        "Unknown Room Color",
+        subcategory = "Colors",
+    )
+    private val SETTING_DOOR_WITHER_COLOR = addColorPicker(
+        "doorWitherColor",
+        Color(0, 0, 0).rgb,
+        "",
+        "Wither Door Color",
+        subcategory = "Colors",
+    )
+    private val SETTING_DOOR_BLOOD_COLOR = addColorPicker(
+        "doorBloodColor",
+        Color(255, 0, 0).rgb,
+        "",
+        "Blood Door Color",
+        subcategory = "Colors",
+    )
+    private val SETTING_DOOR_ENTRANCE_COLOR = addColorPicker(
+        "doorEntranceColor",
+        Color(20, 133, 0).rgb,
+        "",
+        "Entrance Door Color",
+        subcategory = "Colors",
+    )
+    // hear me out chick, i know it doesn't belong here but it's part of the colors
+    private val SETTING_NORMAL_DOOR_DYNAMIC = addSwitch(
+        "doorNormalDynamicColor",
+        false,
+        "If enabled, this will ignore the \"Normal Door Color\" and use the room's color for a more blend-in door way.",
+        "Normal Door Dynamic Color",
+        subcategory = "Colors"
+    )
+    private val SETTING_NORMAL_DOOR_COLOR = addColorPicker(
+        "doorNormalColor",
+        Color(107, 58, 17).rgb,
+        "",
+        "Normal Door Color",
+        subcategory = "Colors"
+    )
+    private val SETTING_ROOM_SIZE = addDecimalSlider(
+        "roomSize",
+        0.8,
+        0.0, 1.0,
+        "",
+        "Room Size",
+        subcategory = "Style",
+    )
+    private val SETTING_DOOR_SIZE = addDecimalSlider(
+        "doorSize",
+        0.31,
+        0.0, 1.0,
+        "",
+        "Door Size",
+        subcategory = "Style",
+    )
+    private val SETTING_RENDER_CHECKMARK = addSwitch(
+        "renderCheckmark",
+        false,
+        "",
+        "Render Checkmarks",
+        subcategory = "Behavior",
+    )
+    private val SETTING_RENDER_PUZZLE_ICON = addSwitch(
+        "renderPuzzleIcon",
+        false,
+        "",
+        "Render Puzzle Icon",
+        subcategory = "Behavior",
+    )
+    private val SETTING_RENDER_ROOM_NAMES = addSwitch(
+        "renderRoomNames",
+        true,
+        "",
+        "Render Room Names",
+        subcategory = "Behavior",
+    )
+    private val SETTING_RENDER_ROOM_NAMES_NOT_EFB = addSwitch(
+        "dontRenderCommonRoomNames",
+        true,
+        "Avoids rendering the name for rooms Entrance/Fairy/Blood.",
+        "Don't Render Names for Entrance/Fairy/Blood",
+        subcategory = "Behavior",
+    )
+    private val SETTING_DONT_RENDER_YELLOW_NAME = addSwitch(
+        "dontRenderYellowName",
+        false,
+        "Avoids rendering Yellow room's name.",
+        "Don't Render Yellow Room Name",
+        subcategory = "Behavior"
+    )
+    private val SETTING_RENDER_FAIRY_CHECK = addSwitch(
+        "dontRenderFairyCheckmark",
+        false,
+        "",
+        "Don't Render Fairy Checkmark",
+        subcategory = "Behavior"
+    )
+    private val SETTING_DONT_RENDER_CHECK_IF_NAME = addSwitch(
+        "dontRenderCheckIfName",
+        false,
+        "Avoids rendering checkmarks if the room name is also being rendered.",
+        "Don't Render Checkmark and Name",
+        subcategory = "Behavior",
+    )
+    private val SETTING_CHECK_IF_GREEN = addSwitch(
+        "checkIfGreen",
+        false,
+        "Will also hide all room text. Still requires 'Render Checkmarks' to be on, bypasses 'Dont Render Checkmark and Name'.",
+        "Render Check If Green",
+    )
+    private val SETTING_RENDER_SECRET_COUNT = addSwitch(
+        "renderSecretCount",
+        true,
+        "(we dont actually track or sync secrets right now)",
+        "Render Secret Count",
+        subcategory = "Behavior",
+    )
+    private val SETTING_DONT_RENDER_SECRET_1 = addSwitch(
+        "dontRenderSecret1",
+        false,
+        "Avoids rendering the secret count if the room only has 1 secret.",
+        "Don't Render 1 Secret Count",
+        subcategory = "Behavior",
+    )
+    private val SETTING_RENDER_CHECK_IF_0 = addSwitch(
+        "renderCheckIf0",
+        false,
+        "Renders a checkmark instead of nothing if the room secrets are 0",
+        "Render Checkmark If 0",
+        subcategory = "Behavior",
+    )
+    private val SETTING_RENDER_PUZZLE_NAME = addSwitch(
+        "renderPuzzleName",
+        true,
+        "",
+        "Render Puzzle Name",
+        subcategory = "Behavior",
+    )
+    private val SETTING_ICON_STYLE = addSelection(
+        "iconStyle",
+        0,
+        listOf("IllegalMap", "NEU", "Vanilla New", "Vanilla Old"),
+        "",
+        "Icon Style",
+        subcategory = "Style",
+    )
+    private val SETTING_ICON_SIZE = addDecimalSlider(
+        "iconSize",
+        0.6,
+        0.0, 2.0,
+        "Affects puzzles + checkmarks. (% of the room)",
+        "Icon Size",
+        subcategory = "Style",
+    )
+    private val SETTING_ICON_ALIGNMENT = addSelection(
+        "iconAlign",
+        DungeonMapRoomInfoAlignment.Center.ordinal,
+        DungeonMapRoomInfoAlignment.entries.map { it.str },
+        "Alignment of the icon with respect to the room layout.",
+        "Icon Alignment",
+        subcategory = "Style",
+    )
+    private val SETTING_TEXT_SIZE = addDecimalSlider(
+        "textSize",
+        1.33,
+        0.0, 2.0,
+        "Affects room names + secret count. (% of the room)",
+        "Text Size",
+        subcategory = "Style",
+    )
+    private val SETTING_TEXT_ALIGNMENT = addSelection(
+        "textAlign",
+        DungeonMapRoomInfoAlignment.CenterL.ordinal,
+        DungeonMapRoomInfoAlignment.entries.map { it.str },
+        "Alignment of the text with respect to the room layout",
+        "Text Alignment",
+        subcategory = "Style",
+    )
+    private val SETTING_TEXT_SHADOW = addSelection(
+        "textShadow2",
+        1,
+        listOf("None", "Drop", "Outline"),
+        "",
+        "Text Shadow",
+        subcategory = "Style",
+    )
+    private val SETTING_COLOR_ROOM_TEXT = addSwitch(
+        "colorRoomName",
+        true,
+        "Change color of room name based on the room checkmark.",
+        "Color Room Name",
+        subcategory = "Style",
+    )
+    var SETTING_RENDER_HIDDEN_ROOMS = false
+    private val SETTING_HIDDEN_ROOM_DARKEN = addDecimalSlider(
+        "hiddenRoomDarken",
+        0.7,
+        0.0, 1.0,
+        "factor by which to darken hidden rooms",
+        "Hidden Room Darken Factor",
+        subcategory = "Style",
+    )
+    private val SETTING_ROTATE = addSwitch(
+        "rotate",
+        false,
+        "text rotates too :) (it is upside down)",
+        "Rotate Map Around Player",
+        subcategory = "Behavior",
+    )
+    private val SETTING_SHOW_IN_BOSS = addSwitch(
+        "showInBoss",
+        false,
+        "Shows the map in boss room",
+        "Show In Boss",
+        subcategory = "Behavior"
+    )
+
+    override fun createRequirements(): List<BasicState<Boolean>?> {
+        return super.createRequirements() + listOf(Dungeons.inBoss.map(Boolean::not).zip(SETTING_SHOW_IN_BOSS.state, Boolean::or))
+    }
+
+    private val mapRenderer = DungeonMapBaseRenderer()
+
+    private var dump = false
+
+    init {
+        DevonianCommand.command.subcommand("dumpmap") { _, _ ->
+            dump = true
+            return@subcommand 1
+        }
+    }
+
+    override fun getBounds(): BoundingBox = BoundingBox(
+        x, y,
+        100.0 * scale, 100.0 * scale
+    )
+
+    fun redrawMap(rooms: List<DungeonRoom?>, doors: List<DungeonDoor?>) {
+        var floor = Dungeons.floor
+        if (floor == FloorType.None) floor = FloorType.M7
+
+        if (dump) {
+            println("Rooms:")
+            rooms.forEach {
+                if (it == null) return@forEach
+                println("${System.identityHashCode(it)} ${it.name} ${it.explored} ${it.type.name} ${it.rotation} ${it.comps.joinToString(",") { it.toComponent().toString() }} ${it.doors.joinToString(",") { "${System.identityHashCode(it)} ${it.type.name} ${it.opened} ${it.comp.toComponent()}" }}")
+            }
+            println("Doors:")
+            doors.forEach {
+                if (it == null) return@forEach
+                println("${System.identityHashCode(it)} ${it.type.name} ${it.opened} ${it.comp.toComponent()} ${it.rooms.joinToString(",") { "${System.identityHashCode(it)} ${it.name} ${it.explored} ${it.comps.joinToString(",") { it.toComponent().toString() }}" }}")
+            }
+            dump = false
+        }
+
+        val bounds = getBounds()
+        val window = minecraft.window
+        mapRenderer.update(
+            (bounds.w * window.guiScale + 0.5).toInt(),
+            (bounds.h * window.guiScale + 0.5).toInt(),
+            DungeonMapRenderData(
+                rooms, doors,
+                DungeonMapRenderOptions(
+                    buildMap {
+                        put(DungeonMapColors.Background, SETTING_MAP_BACKGROUND_COLOR.getColor())
+                        put(DungeonMapColors.Border, SETTING_MAP_BORDER_COLOR.getColor())
+                        put(DungeonMapColors.RoomEntrance, SETTING_ROOM_ENTRANCE_COLOR.getColor())
+                        put(DungeonMapColors.RoomNormal, SETTING_ROOM_NORMAL_COLOR.getColor())
+                        put(DungeonMapColors.RoomMiniboss, SETTING_ROOM_MINIBOSS_COLOR.getColor())
+                        put(DungeonMapColors.RoomFairy, SETTING_ROOM_FAIRY_COLOR.getColor())
+                        put(DungeonMapColors.RoomBlood, SETTING_ROOM_BLOOD_COLOR.getColor())
+                        put(DungeonMapColors.RoomPuzzle, SETTING_ROOM_PUZZLE_COLOR.getColor())
+                        put(DungeonMapColors.RoomTrap, SETTING_ROOM_TRAP_COLOR.getColor())
+                        put(DungeonMapColors.RoomYellow, SETTING_ROOM_YELLOW_COLOR.getColor())
+                        put(DungeonMapColors.RoomRare, SETTING_ROOM_RARE_COLOR.getColor())
+                        put(DungeonMapColors.RoomUnknown, SETTING_ROOM_UNKNOWN_COLOR.getColor())
+                        if (!SETTING_NORMAL_DOOR_DYNAMIC.get())
+                            put(DungeonMapColors.DoorNormal, SETTING_NORMAL_DOOR_COLOR.getColor())
+                        put(DungeonMapColors.DoorWither, SETTING_DOOR_WITHER_COLOR.getColor())
+                        put(DungeonMapColors.DoorBlood, SETTING_DOOR_BLOOD_COLOR.getColor())
+                        put(DungeonMapColors.DoorEntrance, SETTING_DOOR_ENTRANCE_COLOR.getColor())
+                    },
+                    SETTING_ROOM_SIZE.get(), SETTING_DOOR_SIZE.get(),
+                    floor.roomsW, floor.roomsH,
+                    SETTING_MAP_PADDING.get(), ceil(SETTING_MAP_BORDER.get() * scale).toInt(),
+                    SETTING_ICON_STYLE.get(),
+                    SETTING_RENDER_CHECKMARK.get(), SETTING_RENDER_PUZZLE_ICON.get(),
+                    SETTING_RENDER_ROOM_NAMES.get(), SETTING_RENDER_ROOM_NAMES_NOT_EFB.get(),
+                    SETTING_DONT_RENDER_YELLOW_NAME.get(),
+                    SETTING_RENDER_FAIRY_CHECK.get(),
+                    SETTING_DONT_RENDER_CHECK_IF_NAME.get(),
+                    SETTING_CHECK_IF_GREEN.get(),
+                    SETTING_RENDER_SECRET_COUNT.get(),
+                    SETTING_DONT_RENDER_SECRET_1.get(),
+                    SETTING_RENDER_CHECK_IF_0.get(),
+                    SETTING_RENDER_PUZZLE_NAME.get(),
+                    SETTING_ICON_SIZE.get(),
+                    DungeonMapRoomInfoAlignment.from(SETTING_ICON_ALIGNMENT.getCurrent()),
+                    SETTING_TEXT_SIZE.get(),
+                    DungeonMapRoomInfoAlignment.from(SETTING_TEXT_ALIGNMENT.getCurrent()),
+                    Shadow.from(SETTING_TEXT_SHADOW.get()),
+                    SETTING_COLOR_ROOM_TEXT.get(),
+                    SETTING_RENDER_HIDDEN_ROOMS,
+                    Dungeons.started.value,
+                    SETTING_HIDDEN_ROOM_DARKEN.get(),
+                    SETTING_MC_TEXT.get(),
+                ),
+                window.guiScale,
+            )
+        )
+    }
+
+    private val textHuds by lazy {
+        List(5) {
+            StylizedTextHud("dungeon_map_name_$it").also {
+                it.x = 0.0
+                it.y = -10.0
+                it.scale = 1f
+                it.anchor = Anchor.Center
+                it.align = Align.Center
+                it.backdrop = Backdrop.None
+            }
+        }
+    }
+
+    override fun drawImpl(ctx: GuiGraphics) {
+        var floor = Dungeons.floor
+        if (floor == FloorType.None) floor = FloorType.M7
+
+        val bounds = getBounds()
+
+        val totalMaxDim = floor.maxDim + SETTING_MAP_PADDING.get() * 2
+        val boundsOX = (floor.maxDim - floor.roomsW) / 2.0 + SETTING_MAP_PADDING.get()
+        val boundsOY = (floor.maxDim - floor.roomsH) / 2.0 + SETTING_MAP_PADDING.get()
+        val compBounds = BoundingBox(
+            boundsOX / totalMaxDim * bounds.w,
+            boundsOY / totalMaxDim * bounds.h,
+            floor.maxDim / totalMaxDim * bounds.w,
+            floor.maxDim / totalMaxDim * bounds.h
+        )
+
+        ctx.pose()
+            .pushMatrix()
+            .translate(x.toFloat(), y.toFloat())
+
+        val bgColor = SETTING_MAP_BACKGROUND_COLOR.getColor()
+        if (bgColor.alpha > 0) {
+            ctx.guiRenderState.submitGuiElement(
+                QuadRenderState(
+                    RenderPipelines.GUI,
+                    Matrix3x2f(ctx.pose()),
+                    0f, 0f,
+                    bounds.w.toFloat(), bounds.h.toFloat(),
+                    SETTING_MAP_BACKGROUND_COLOR.get(),
+                    ctx.scissorStack.peek(),
+                )
+            )
+        }
+
+        if (SETTING_ROTATE.get()) {
+            ctx.scissorStack.push(
+                ScreenRectangle(
+                    ceil(x).toInt(),
+                    ceil(y).toInt(),
+                    bounds.w.toInt(),
+                    bounds.h.toInt(),
+                )
+            )
+
+            val pos = Dungeons.selfPlayer.getLerpedPosition()
+            if (pos != null) {
+                val px = MathUtils.rescale(
+                    pos.x,
+                    0.0, floor.maxDim * 2.0,
+                    compBounds.x, compBounds.x + compBounds.w
+                ).toFloat()
+                val py = MathUtils.rescale(
+                    pos.z,
+                    0.0, floor.maxDim * 2.0,
+                    compBounds.y, compBounds.y + compBounds.h
+                ).toFloat()
+                ctx.pose()
+                    .translate((bounds.w * 0.5).toFloat(), (bounds.h * 0.5).toFloat())
+                    .rotate((pos.r - PI * 0.5).toFloat())
+                    .translate(-px, -py)
+            }
+        }
+
+        mapRenderer.draw(ctx, 0f, 0f, (1.0 / minecraft.window.guiScale).toFloat())
+        if (SETTING_MC_TEXT.get()) {
+            mapRenderer.delegatedText.value.forEach {
+                it.draw(ctx)
+            }
+        }
+        if (Dungeons.inBoss.value) {
+            if (SETTING_ROTATE.get()) ctx.scissorStack.pop()
+            ctx.pose().popMatrix()
+            return
+        }
+
+        val holdingLeap = minecraft.player!!.mainHandItem.let {
+            listOf("SPIRIT_LEAP", "INFINITE_SPIRIT_LEAP").contains(ItemUtils.skyblockId(it))
+        }
+
+        val shouldRenderName =
+            if (SETTING_RENDER_NAMES_ONLY_LEAP.get()) holdingLeap
+            else true
+        val renderNames = SETTING_RENDER_NAMES.get() && shouldRenderName
+
+        // shrugs
+        var idx = Dungeons.players.size
+        Dungeons.players.reversed().forEach { (_, player) ->
+            val i = --idx
+            if (player.isDead) return@forEach
+            val pos = player.getLerpedPosition() ?: return@forEach
+
+            val px = MathUtils.rescale(
+                pos.x,
+                0.0, floor.maxDim * 2.0,
+                compBounds.x, compBounds.x + compBounds.w
+            ).toFloat()
+            val py = MathUtils.rescale(
+                pos.z,
+                0.0, floor.maxDim * 2.0,
+                compBounds.y, compBounds.y + compBounds.h
+            ).toFloat()
+
+            val info = player.profileInfo
+            val isHead =
+                SETTING_USE_PLAYER_HEADS.get() && info != null &&
+                        (!SETTING_USE_MARKER_SELF.get() || i > 0)
+            var dxf = cos(-pos.r).toFloat() * (if (isHead) SETTING_HEAD_SCALE.get().toFloat() else SETTING_MARKER_SCALE.get().toFloat()) * scale * 0.5f
+            var dyf = sin(-pos.r).toFloat() * (if (isHead) SETTING_HEAD_SCALE.get().toFloat() else SETTING_MARKER_SCALE.get().toFloat()) * scale * 0.5f
+            var dxr = cos(-pos.r + PI / 2).toFloat() * (if (isHead) SETTING_HEAD_SCALE.get().toFloat() else SETTING_MARKER_SCALE.get().toFloat()) * scale * 0.5f
+            var dyr = sin(-pos.r + PI / 2).toFloat() * (if (isHead) SETTING_HEAD_SCALE.get().toFloat() else SETTING_MARKER_SCALE.get().toFloat()) * scale * 0.5f
+            val u0: Float
+            val v0: Float
+            val u1: Float
+            val v1: Float
+            val maxDy: Float
+            val textureView: GpuTextureView
+            val sampler: GpuSampler
+            if (isHead) {
+                dxf *= 4f
+                dyf *= 4f
+                dxr *= 4f
+                dyr *= 4f
+                u0 = SKIN_HEAD_U.toFloat() / SKIN_TEX_WIDTH
+                v0 = SKIN_HEAD_V.toFloat() / SKIN_TEX_HEIGHT
+                u1 = (SKIN_HEAD_U + SKIN_HEAD_WIDTH).toFloat() / SKIN_TEX_WIDTH
+                v1 = (SKIN_HEAD_V + SKIN_HEAD_HEIGHT).toFloat() / SKIN_TEX_HEIGHT
+                maxDy = 4f
+                val skin = info.skin
+                val rl = skin.body.texturePath()
+                val texture = Devonian.minecraft.textureManager.getTexture(rl)
+                textureView = texture.textureView
+                sampler = texture.sampler
+            } else {
+                dxf *= 2.8f
+                dyf *= 2.8f
+                dxr *= 2f
+                dyr *= 2f
+                u0 = if (i == 0) MARKER_SELF_U0 else MARKER_OTHER_U0
+                v0 = if (i == 0) MARKER_SELF_V0 else MARKER_OTHER_V0
+                u1 = if (i == 0) MARKER_SELF_U1 else MARKER_OTHER_U1
+                v1 = if (i == 0) MARKER_SELF_V1 else MARKER_OTHER_V1
+                maxDy = 2.8f
+                textureView = markerAtlasUploader.textureView
+                sampler = markerAtlasUploader.sampler
+            }
+
+            if (renderNames) {
+                val nameFormat =
+                    if (SETTING_COLOR_NAME_BY_CLASS.get()) player.role.colorCode
+                    else ""
+                val text =
+                // Force display player name if leap is being held regardless of configurations, maybe should be configurable
+                    // or perhaps force this to be the `SETTING_RENDER_NAMES_ONLY_LEAP` standard, since people expect this behavior
+                    if (holdingLeap) player.name
+                    else if (SETTING_USE_CLASS_NAME.get() && player.role != DungeonClass.Unknown) player.role.shortName
+                    else player.name
+
+                val hud = textHuds[i]
+                hud.x = px.toDouble()
+                hud.y = py - maxDy * (if (isHead) SETTING_HEAD_SCALE.get().toFloat() else SETTING_MARKER_SCALE.get().toFloat()) - hud.getHeight() * 0.5
+                hud.shadow = Shadow.from(SETTING_TEXT_SHADOW.get())
+                hud.setLine("$nameFormat$text")
+                hud.scale = scale * 0.3f * SETTING_NAME_SCALE.get().toFloat()
+                hud.draw(ctx)
+            }
+
+            ctx.guiRenderState.submitGuiElement(
+                TexturedQuadRenderState(
+                    BufferedImageRenderer.pipeline,
+                    TextureSetup(
+                        textureView, null, null,
+                        sampler, null, null,
+                    ),
+                    Matrix3x2f(ctx.pose()),
+                    px + dxf - dxr, py + dyf - dyr,
+                    px - dxf - dxr, py - dyf - dyr,
+                    px + dxf + dxr, py + dyf + dyr,
+                    px - dxf + dxr, py - dyf + dyr,
+                    u0, v0,
+                    u0, v1,
+                    u1, v0,
+                    u1, v1,
+                    -1,
+                    ctx.scissorStack.peek()
+                )
+            )
+            if (isHead) {
+                ctx.guiRenderState.submitGuiElement(
+                    TexturedQuadRenderState(
+                        BufferedImageRenderer.pipeline,
+                        TextureSetup(
+                            textureView, null, null,
+                            sampler, null, null,
+                        ),
+                        Matrix3x2f(ctx.pose()),
+                        px + dxf - dxr, py + dyf - dyr,
+                        px - dxf - dxr, py - dyf - dyr,
+                        px + dxf + dxr, py + dyf + dyr,
+                        px - dxf + dxr, py - dyf + dyr,
+                        SKIN_HAT_U.toFloat() / SKIN_TEX_WIDTH, SKIN_HAT_V.toFloat() / SKIN_TEX_HEIGHT,
+                        SKIN_HAT_U.toFloat() / SKIN_TEX_WIDTH, (SKIN_HAT_V + SKIN_HAT_HEIGHT).toFloat() / SKIN_TEX_HEIGHT,
+                        (SKIN_HAT_U + SKIN_HAT_WIDTH).toFloat() / SKIN_TEX_WIDTH, SKIN_HAT_V.toFloat() / SKIN_TEX_HEIGHT,
+                        (SKIN_HAT_U + SKIN_HAT_WIDTH).toFloat() / SKIN_TEX_WIDTH, (SKIN_HAT_V + SKIN_HAT_HEIGHT).toFloat() / SKIN_TEX_HEIGHT,
+                        -1,
+                        ctx.scissorStack.peek()
+                    )
+                )
+            }
+
+            if (SETTING_COLOR_MARKER_BY_CLASS.get() && player.role.color.alpha != 0) {
+                val u0: Float
+                val v0: Float
+                val u1: Float
+                val v1: Float
+                if (isHead) {
+                    u0 = MARKER_HEAD_OUTLINE_U0
+                    v0 = MARKER_HEAD_OUTLINE_V0
+                    u1 = MARKER_HEAD_OUTLINE_U1
+                    v1 = MARKER_HEAD_OUTLINE_V1
+                } else {
+                    u0 = MARKER_POINTER_OUTLINE_U0
+                    v0 = MARKER_POINTER_OUTLINE_V0
+                    u1 = MARKER_POINTER_OUTLINE_U1
+                    v1 = MARKER_POINTER_OUTLINE_V1
+                }
+
+                ctx.guiRenderState.submitGuiElement(
+                    TexturedQuadRenderState(
+                        BufferedImageRenderer.pipeline,
+                        TextureSetup(
+                            markerAtlasUploader.textureView, null, null,
+                            markerAtlasUploader.sampler, null, null,
+                        ),
+                        Matrix3x2f(ctx.pose()),
+                        px + dxf - dxr, py + dyf - dyr,
+                        px - dxf - dxr, py - dyf - dyr,
+                        px + dxf + dxr, py + dyf + dyr,
+                        px - dxf + dxr, py - dyf + dyr,
+                        u0, v0,
+                        u0, v1,
+                        u1, v0,
+                        u1, v1,
+                        player.role.colorRgb,
+                        ctx.scissorStack.peek()
+                    )
+                )
+            }
+        }
+
+        if (SETTING_ROTATE.get()) ctx.scissorStack.pop()
+
+        ctx.pose().popMatrix()
+    }
+
+    override fun initialize() {
+        on<RenderOverlayEvent> { event ->
+            draw(event.ctx)
+        }
+    }
+
+    override fun sampleDraw(ctx: GuiGraphics, mx: Int, my: Int, selected: Boolean) {
+        val pos = getBounds()
+        ctx.drawCenteredString(minecraft.font, "Dungeon Map :)", (pos.x + pos.w / 2.0).toInt(), (pos.y + pos.h / 2.0).toInt(), -1)
+
+        super.sampleDraw(ctx, mx, my, selected)
+    }
+
+    override fun onWorldChange(event: WorldChangeEvent) {
+        mapRenderer.invalidate()
+    }
+
+    val mcidMarkerAtlas = Identifier.fromNamespaceAndPath("devonian", "dungeons/map/marker_atlas")
+    val markerAtlasUploader = BufferedImageUploader.fromResource("/assets/devonian/dungeons/map/marker_atlas.png")!!
+        .register(mcidMarkerAtlas)
+
+    val MARKER_SELF_U0: Float
+    val MARKER_SELF_V0: Float
+    val MARKER_SELF_U1: Float
+    val MARKER_SELF_V1: Float
+
+    val MARKER_OTHER_U0: Float
+    val MARKER_OTHER_V0: Float
+    val MARKER_OTHER_U1: Float
+    val MARKER_OTHER_V1: Float
+
+    val MARKER_POINTER_OUTLINE_U0: Float
+    val MARKER_POINTER_OUTLINE_V0: Float
+    val MARKER_POINTER_OUTLINE_U1: Float
+    val MARKER_POINTER_OUTLINE_V1: Float
+
+    val MARKER_HEAD_OUTLINE_U0: Float
+    val MARKER_HEAD_OUTLINE_V0: Float
+    val MARKER_HEAD_OUTLINE_U1: Float
+    val MARKER_HEAD_OUTLINE_V1: Float
+
+    init {
+        val MARKER_ATLAS_WIDTH = 200 * 1f
+        val MARKER_ATLAS_HEIGHT = 280 * 1f
+
+        val MARKER_WIDTH = 100
+        val MARKER_HEIGHT = 140
+        val selfX = 0
+        val selfY = 0
+        val otherX = MARKER_WIDTH
+        val otherY = 0
+
+        val pointerOutlineX = 0
+        val pointerOutlineY = MARKER_HEIGHT
+
+        val HEAD_WIDTH = 80
+        val HEAD_HEIGHT = 80
+        val headOutlineX = MARKER_WIDTH
+        val headOutlineY = MARKER_HEIGHT
+
+        MARKER_SELF_U0 = selfX / MARKER_ATLAS_WIDTH
+        MARKER_SELF_V0 = selfY / MARKER_ATLAS_HEIGHT
+        MARKER_SELF_U1 = (selfX + MARKER_WIDTH) / MARKER_ATLAS_WIDTH
+        MARKER_SELF_V1 = (selfY + MARKER_HEIGHT) / MARKER_ATLAS_HEIGHT
+
+        MARKER_OTHER_U0 = otherX / MARKER_ATLAS_WIDTH
+        MARKER_OTHER_V0 = otherY / MARKER_ATLAS_HEIGHT
+        MARKER_OTHER_U1 = (otherX + MARKER_WIDTH) / MARKER_ATLAS_WIDTH
+        MARKER_OTHER_V1 = (otherY + MARKER_HEIGHT) / MARKER_ATLAS_HEIGHT
+
+        MARKER_POINTER_OUTLINE_U0 = pointerOutlineX / MARKER_ATLAS_WIDTH
+        MARKER_POINTER_OUTLINE_V0 = pointerOutlineY / MARKER_ATLAS_HEIGHT
+        MARKER_POINTER_OUTLINE_U1 = (pointerOutlineX + MARKER_WIDTH) / MARKER_ATLAS_WIDTH
+        MARKER_POINTER_OUTLINE_V1 = (pointerOutlineY + MARKER_HEIGHT) / MARKER_ATLAS_HEIGHT
+
+        MARKER_HEAD_OUTLINE_U0 = headOutlineX / MARKER_ATLAS_WIDTH
+        MARKER_HEAD_OUTLINE_V0 = headOutlineY / MARKER_ATLAS_HEIGHT
+        MARKER_HEAD_OUTLINE_U1 = (headOutlineX + HEAD_WIDTH) / MARKER_ATLAS_WIDTH
+        MARKER_HEAD_OUTLINE_V1 = (headOutlineY + HEAD_HEIGHT) / MARKER_ATLAS_HEIGHT
+    }
+}
+
+package com.github.synnerz.devonian.features.dungeons.map
+
+import com.github.synnerz.devonian.api.bufimgrenderer.BufferedImageRenderer
+import com.github.synnerz.devonian.api.dungeon.DungeonRoom
+import com.github.synnerz.devonian.api.dungeon.WorldComponentPosition
+import com.github.synnerz.devonian.api.dungeon.mapEnums.*
+import com.github.synnerz.devonian.hud.texthud.*
+import com.github.synnerz.devonian.utils.BoundingBox
+import com.github.synnerz.devonian.utils.render.impl.TextRendererImpl
+import kotlinx.atomicfu.atomic
+import java.awt.Color
+import java.awt.Font
+import java.awt.image.BufferedImage
+import java.util.*
+import javax.imageio.ImageIO
+import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.max
+
+class DungeonMapBaseRenderer :
+    BufferedImageRenderer<DungeonMapRenderData>("dungeonMapBaseRenderer"), FontListener {
+    val cachedStrings: MutableMap<CachedStringKey, CachedRenderedString> = Collections.synchronizedMap(
+        object : LinkedHashMap<CachedStringKey, CachedRenderedString>(36) {
+            override fun removeEldestEntry(eldest: Map.Entry<CachedStringKey?, CachedRenderedString?>?): Boolean = size > 36
+        }
+    )
+    var cachedW = 0
+    var cachedH = 0
+    var cachedSize = 0
+
+    data class CachedStringKey(val str: String, val shadow: StylizedTextHud.Shadow)
+
+    data class CachedRenderedString(
+        val img: BufferedImage,
+        val xo: Double, val yo: Double,
+        val w: Double, val h: Double,
+    )
+
+    override fun onFontChange(f: Font) {
+        cachedStrings.clear()
+    }
+
+    init {
+        BImgTextHudRenderer.registerFontListener(this)
+    }
+
+    data class TextRenderParam(val box: BoundingBox, val key: CachedStringKey, val text: List<String>)
+
+    val delegatedText = atomic(emptyList<StylizedTextHud>())
+
+    override fun invalidate() {
+        super.invalidate()
+        delegatedText.value = emptyList()
+    }
+
+    override fun drawImage(img: BufferedImage, param: DungeonMapRenderData): BufferedImage {
+        val g = img.createGraphics()
+
+        val w = img.width
+        val h = img.height
+
+        val rooms = param.rooms.toSet()
+        val doors = param.doors
+        val options = param.options
+        val colors = options.colors
+
+        // if ((colors[DungeonMapColors.Background]?.alpha ?: 0) > 0) {
+        //     g.paint = colors[DungeonMapColors.Background]
+        //     g.fillRect(0, 0, w, h)
+        // }
+
+        if (options.border > 0 && (colors[DungeonMapColors.Border]?.alpha ?: 0) > 0) {
+            g.paint = colors[DungeonMapColors.Border]
+            val lw = options.border
+            g.fillRect(0, 0, w, lw)
+            g.fillRect(0, lw, lw, h - lw)
+            g.fillRect(w - lw, lw, lw, h - lw)
+            g.fillRect(lw, h - lw, w - lw - lw, lw)
+        }
+
+        fun colorForRoom(room: DungeonRoom): Color? {
+            var col =
+                if (!room.explored && (!options.renderUnknownRooms || room.name == null))
+                    colors[DungeonMapColors.RoomUnknown]
+                else when (room.type) {
+                    RoomTypes.ENTRANCE -> colors[DungeonMapColors.RoomEntrance]
+                    RoomTypes.NORMAL -> when (room.clear) {
+                        ClearTypes.MOB,
+                        ClearTypes.OTHER
+                            -> colors[DungeonMapColors.RoomNormal]
+
+                        ClearTypes.MINIBOSS -> colors[DungeonMapColors.RoomMiniboss]
+                    }
+
+                    RoomTypes.FAIRY -> colors[DungeonMapColors.RoomFairy]
+                    RoomTypes.BLOOD -> colors[DungeonMapColors.RoomBlood]
+                    RoomTypes.PUZZLE -> colors[DungeonMapColors.RoomPuzzle]
+                    RoomTypes.TRAP -> colors[DungeonMapColors.RoomTrap]
+                    RoomTypes.YELLOW -> colors[DungeonMapColors.RoomYellow]
+                    RoomTypes.RARE -> colors[DungeonMapColors.RoomRare]
+                    RoomTypes.UNKNOWN -> colors[DungeonMapColors.RoomUnknown]
+                }
+
+            if (col != null && options.dungeonStarted && !room.explored) col = Color(
+                (col.red * options.unknownRoomsDarkenFactor + 0.5).toInt(),
+                (col.green * options.unknownRoomsDarkenFactor + 0.5).toInt(),
+                (col.blue * options.unknownRoomsDarkenFactor + 0.5).toInt(),
+                col.alpha
+            )
+
+            return col
+        }
+
+        val roomRectOffset = (1.0 - options.roomWidth) * 0.5
+        val maxDim = max(options.dungeonWidth, options.dungeonHeight)
+        val totalMaxDim = maxDim + options.padding * 2
+        val compToBImgFW = w / totalMaxDim
+        val compToBImgFH = h / totalMaxDim
+        val bImgOX = ((maxDim - options.dungeonWidth) / 2.0 + options.padding) * compToBImgFW
+        val bImgOY = ((maxDim - options.dungeonHeight) / 2.0 + options.padding) * compToBImgFH
+
+        val doorOffset = (1.0 - options.doorWidth) * 0.5
+
+        fun drawDoor(cx1: Int, cz1: Int, cx2: Int, cz2: Int) {
+            if (cx1 > cx2 || cz1 > cz2) return drawDoor(cx2, cz2, cx1, cz1)
+            val cx: Double
+            val cz: Double
+            val cw: Double
+            val ch: Double
+            if (cx1 == cx2) {
+                cx = cx1 + doorOffset
+                cz = cz1 + roomRectOffset + options.roomWidth
+                cw = options.doorWidth
+                ch = roomRectOffset * 2.0
+            } else {
+                cx = cx1 + roomRectOffset + options.roomWidth
+                cz = cz1 + doorOffset
+                cw = roomRectOffset * 2.0
+                ch = options.doorWidth
+            }
+            val bx = (compToBImgFW * cx + bImgOX).toInt()
+            val bz = (compToBImgFH * cz + bImgOY).toInt()
+            val bw = ceil(compToBImgFW * cw).toInt()
+            val bh = ceil(compToBImgFH * ch).toInt()
+
+            g.fillRect(bx, bz, bw + 1, bh + 1)
+        }
+
+        doors.forEach { door ->
+            if (door == null) return@forEach
+            if (!options.renderUnknownRooms && door.rooms.all { !it.explored }) return@forEach
+            val color = when (door.type) {
+                DoorTypes.ENTRANCE -> colors[DungeonMapColors.DoorEntrance]
+                DoorTypes.WITHER -> colors[DungeonMapColors.DoorWither]
+                DoorTypes.BLOOD -> colors[DungeonMapColors.DoorBlood]
+                DoorTypes.NORMAL -> {
+                    if (!door.opened) return@forEach
+                    val data = colors[DungeonMapColors.DoorNormal]
+                    if (data != null) data
+                    else {
+                        val room = door.rooms.minByOrNull {
+                            it.type.prio - (if (!it.explored && !options.renderUnknownRooms) 100 else 0)
+                        } ?: return@forEach
+
+                        if (!room.explored && door.holyShitFairyDoorPleaseStopFlashingSobs) colors[DungeonMapColors.DoorWither]
+                        else colorForRoom(room)
+                    }
+                }
+            } ?: colors[DungeonMapColors.RoomNormal] ?: return@forEach
+
+            g.paint = color
+            drawDoor(
+                door.roomComp1.x,
+                door.roomComp1.z,
+                door.roomComp2.x,
+                door.roomComp2.z,
+            )
+        }
+
+        fun drawRoom(x: Int, z: Int, w: Int, h: Int) {
+            val cx = x + roomRectOffset
+            val cz = z + roomRectOffset
+            val cw = options.roomWidth + w - 1
+            val ch = options.roomWidth + h - 1
+            val bx = (compToBImgFW * cx + bImgOX).toInt()
+            val bz = (compToBImgFH * cz + bImgOY).toInt()
+            val bw = ceil(compToBImgFW * cw).toInt()
+            val bh = ceil(compToBImgFH * ch).toInt()
+
+            g.fillRect(bx, bz, bw + 1, bh + 1)
+        }
+
+        fun drawRoomJoined(cx1: Int, cz1: Int, cx2: Int, cz2: Int) {
+            if (cx1 > cx2 || cz1 > cz2) return drawRoomJoined(cx2, cz2, cx1, cz1)
+            val cx: Double
+            val cz: Double
+            val cw: Double
+            val ch: Double
+            if (cx1 == cx2) {
+                cx = cx1 + roomRectOffset
+                cz = cz1 + roomRectOffset + options.roomWidth
+                cw = options.roomWidth
+                ch = roomRectOffset * 2.0
+            } else {
+                cx = cx1 + roomRectOffset + options.roomWidth
+                cz = cz1 + roomRectOffset
+                cw = roomRectOffset * 2.0
+                ch = options.roomWidth
+            }
+            val bx = (compToBImgFW * cx + bImgOX).toInt()
+            val bz = (compToBImgFH * cz + bImgOY).toInt()
+            val bw = ceil(compToBImgFW * cw).toInt()
+            val bh = ceil(compToBImgFH * ch).toInt()
+
+            g.fillRect(bx, bz, bw + 1, bh + 1)
+        }
+
+        fun getCenterOf(
+            cells: List<WorldComponentPosition>,
+            shape: ShapeTypes,
+            alignment: DungeonMapRoomInfoAlignment
+        ) = when (alignment) {
+            DungeonMapRoomInfoAlignment.TopLeft
+                -> cells.minBy { +it.cx + it.cz }.let { Pair(it.cx / 2 + 0.5, it.cz / 2 + 0.5) }
+            DungeonMapRoomInfoAlignment.TopRight
+                -> cells.minBy { -it.cx + it.cz }.let { Pair(it.cx / 2 + 0.5, it.cz / 2 + 0.5) }
+            DungeonMapRoomInfoAlignment.BottomLeft
+                -> cells.minBy { +it.cx - it.cz }.let { Pair(it.cx / 2 + 0.5, it.cz / 2 + 0.5) }
+            DungeonMapRoomInfoAlignment.BottomRight
+                -> cells.minBy { -it.cx - it.cz }.let { Pair(it.cx / 2 + 0.5, it.cz / 2 + 0.5) }
+            DungeonMapRoomInfoAlignment.Center,
+            DungeonMapRoomInfoAlignment.CenterL -> {
+                if (shape == ShapeTypes.ShapeL) {
+                    val sorted = cells.sortedBy { it.cx + it.cz * 11 }
+                    if (alignment == DungeonMapRoomInfoAlignment.Center) {
+                        val idx =
+                            if (sorted[0].cx > sorted[1].cx) 2
+                            else if (sorted[0].cx == sorted[2].cx) 0
+                            else 1
+                        Pair(sorted[idx].cx / 2 + 0.5, sorted[idx].cz / 2 + 0.5)
+                    } else {
+                        val idx =
+                            if (sorted[0].cz == sorted[1].cz) 2
+                            else 0
+                        Pair(
+                            sorted.mapIndexed { i, v -> if (i == idx) 0.0 else v.cx / 2.0 }.sum() / 2.0 + 0.5,
+                            sorted.mapIndexed { i, v -> if (i == idx) 0.0 else v.cz / 2.0 }.sum() / 2.0 + 0.5,
+                        )
+                    }
+                } else Pair(
+                    cells.sumOf { it.cx / 2.0 } / cells.size + 0.5,
+                    cells.sumOf { it.cz / 2.0 } / cells.size + 0.5
+                )
+            }
+        }
+
+        val decW = options.textSize * options.roomWidth
+        val bw = ceil(decW * compToBImgFW).toInt()
+        val bh = ceil(decW * compToBImgFH).toInt()
+        val fontSize = ceil(options.roomWidth * compToBImgFH * 0.25 * options.textSize).toInt()
+
+        if (bw != cachedW || bh != cachedH || fontSize != cachedSize) {
+            cachedStrings.clear()
+            cachedW = bw
+            cachedH = bh
+            cachedSize = fontSize
+        }
+
+        val textToRender = ArrayDeque<TextRenderParam>()
+        rooms.forEach { room ->
+            if (room == null) return@forEach
+            if (room.doors.isEmpty() && room.name == null) return@forEach
+            val color = colorForRoom(room) ?: colors[DungeonMapColors.RoomNormal] ?: Color(0, true)
+            var shape = room.shape
+            if (shape == ShapeTypes.Unknown) return@forEach
+            var cells = room.comps.toList()
+            var renderRoomInfo = true
+
+            if (!room.explored && !options.renderUnknownRooms) {
+                shape = ShapeTypes.Shape1x1
+                cells = room.comps.filter {
+                    val cx = it.cx
+                    val cz = it.cz
+                    room.doors.any {
+                        abs(cx - it.comp.cx) + abs(cz - it.comp.cz) == 1 &&
+                        it.rooms.any { it.explored }
+                    }
+                }
+                renderRoomInfo = false
+            }
+
+            if (cells.isEmpty()) return@forEach
+
+            if (shape == ShapeTypes.Shape2x2 && cells.size != 4) shape = ShapeTypes.ShapeL
+            if (shape == ShapeTypes.ShapeL && cells.size != 3) shape = when (cells.size) {
+                1 -> ShapeTypes.Shape1x1
+                2 -> ShapeTypes.Shape1x2
+                else ->
+                    // something went terribly wrong
+                    ShapeTypes.ShapeL
+            }
+
+            g.paint = color
+            when (shape) {
+                ShapeTypes.Unknown -> return@forEach
+                ShapeTypes.ShapeL -> {
+                    for (i in cells.indices) {
+                        val cx = cells[i].cx / 2
+                        val cz = cells[i].cz / 2
+                        drawRoom(cx, cz, 1, 1)
+                        for (j in i until cells.size) {
+                            val cx2 = cells[j].cx / 2
+                            val cz2 = cells[j].cz / 2
+                            if (abs(cx - cx2) + abs(cz - cz2) == 1) drawRoomJoined(cx, cz, cx2, cz2)
+                        }
+                    }
+                }
+
+                ShapeTypes.Shape1x1 -> drawRoom(cells[0].cx / 2, cells[0].cz / 2, 1, 1)
+                ShapeTypes.Shape1x2,
+                ShapeTypes.Shape1x3,
+                ShapeTypes.Shape1x4
+                    -> {
+                    val roomCorner = cells.minBy { it.cx + it.cz }
+                    val cx1 = cells[0].cx
+                    val cx2 = cells[1].cx
+                    drawRoom(
+                        roomCorner.cx / 2, roomCorner.cz / 2,
+                        if (cx1 == cx2) 1 else cells.size,
+                        if (cx1 == cx2) cells.size else 1
+                    )
+                }
+
+                ShapeTypes.Shape2x2 -> {
+                    val roomCorner = cells.minBy { it.cx + it.cz }
+                    drawRoom(roomCorner.cx / 2, roomCorner.cz / 2, 2, 2)
+                }
+            }
+
+            val renderName =
+                renderRoomInfo &&
+                (
+                    !options.roomNameNotEFB ||
+                    (
+                        room.type != RoomTypes.ENTRANCE &&
+                        room.type != RoomTypes.FAIRY &&
+                        room.type != RoomTypes.BLOOD
+                    )
+                ) &&
+                (!options.roomNameNotYellow || room.type != RoomTypes.YELLOW) &&
+                (if (room.type == RoomTypes.PUZZLE) options.puzzleName else options.roomName) &&
+                (!options.roomCheckGreen || room.checkmark != CheckmarkTypes.GREEN)
+
+            var decoration =
+                (if (
+                    (
+                        options.checkMark ||
+                        (renderName && room.name == null && room.checkmark != CheckmarkTypes.UNEXPLORED)
+                    ) &&
+                    (!options.roomNoCheckName || !renderName || room.name == null) &&
+                    (!options.roomNoFairyCheck || room.type != RoomTypes.FAIRY || room.checkmark == CheckmarkTypes.UNEXPLORED)
+                ) {
+                    if (options.renderUnknownRooms && room.checkmark == CheckmarkTypes.UNEXPLORED && room.name != null) null
+                    else CHECKMARK[options.iconStyle][room.checkmark]
+                } else null) ?:
+                (if (renderRoomInfo && options.puzzleIcon) SPECIAL_ROOMS[room.name] else null)
+            if (
+                decoration == null &&
+                options.renderCheckIf0Secret &&
+                room.totalSecrets == 0 &&
+                (room.type == RoomTypes.YELLOW || room.type == RoomTypes.NORMAL || room.type == RoomTypes.BLOOD) &&
+                room.checkmark != CheckmarkTypes.UNEXPLORED &&
+                room.checkmark != CheckmarkTypes.NONE
+            )
+                decoration = CHECKMARK[options.iconStyle][room.checkmark]
+            val text = mutableListOf<String>()
+
+            if (renderName) room.name?.also { name ->
+                val colorCode = if (options.colorRoomName) when (room.type) {
+                    RoomTypes.ENTRANCE,
+                    RoomTypes.FAIRY,
+                        -> "&f"
+
+                    RoomTypes.BLOOD -> if (room.checkmark == CheckmarkTypes.GREEN) "&a" else "&f"
+
+                    else -> when (room.checkmark) {
+                        CheckmarkTypes.FAILED -> "&c"
+                        CheckmarkTypes.GREEN -> "&a"
+                        CheckmarkTypes.WHITE -> "&f"
+                        CheckmarkTypes.NONE -> "&7"
+                        CheckmarkTypes.UNEXPLORED ->
+                            if (room.explored || options.dungeonStarted) "&7"
+                            else "&f"
+                    }
+                } else ""
+                name.replace("\u200B", "- ").split(" ").forEach { text.add("$colorCode$it")}
+            }
+            if (
+                renderRoomInfo &&
+                options.secretCount &&
+                room.totalSecrets > (if (options.no1Secret) 1 else 0) &&
+                (!options.roomCheckGreen || room.checkmark != CheckmarkTypes.GREEN)
+            ) {
+                val colorCode = when (room.checkmark) {
+                    CheckmarkTypes.FAILED -> "&c"
+                    CheckmarkTypes.GREEN -> "&a"
+                    CheckmarkTypes.WHITE -> "&f"
+                    CheckmarkTypes.NONE -> "&7"
+                    CheckmarkTypes.UNEXPLORED ->
+                        if (room.explored || options.dungeonStarted) "&7"
+                        else "&f"
+                }
+                text.add("$colorCode${
+                    if (room.checkmark == CheckmarkTypes.GREEN) max(room.totalSecrets, room.secretsCompleted)
+                    else if (room.secretsCompleted < 0) "?"
+                    else room.secretsCompleted
+                }/${room.totalSecrets}")
+            }
+
+            if (decoration == null && text.isEmpty()) return@forEach
+
+            if (decoration != null) {
+                val decW = options.iconSize * options.roomWidth
+                val center = getCenterOf(cells, shape, options.iconAlignment)
+                val decBox = BoundingBox(
+                    center.first - decW * 0.5,
+                    center.second - decW * 0.5,
+                    decW, decW
+                )
+                val bx = (decBox.x * compToBImgFW + bImgOX).toInt()
+                val by = (decBox.y * compToBImgFH + bImgOY).toInt()
+                val bw = ceil(decBox.w * compToBImgFW).toInt()
+                val bh = ceil(decBox.h * compToBImgFH).toInt()
+                g.drawImage(decoration, bx, by, bw, bh, null)
+            }
+
+            if (text.isNotEmpty()) {
+                val center = getCenterOf(cells, shape, options.textAlignment)
+                val decBox = BoundingBox(
+                    center.first - decW * 0.5,
+                    center.second - decW * 0.5,
+                    decW, decW
+                )
+
+                val str = text.joinToString("\n")
+                val key = CachedStringKey(str, options.stringShadow)
+
+                textToRender.add(TextRenderParam(decBox, key, text))
+            }
+        }
+
+        if (textToRender.isNotEmpty()) {
+            if (options.delegateText) {
+                val delegate = ArrayList<StylizedTextHud>(textToRender.size)
+
+                textToRender.forEach { (decBox, _, text) ->
+                    if (text.isEmpty()) return@forEach
+
+                    val hud = StylizedTextHud(
+                        "internal_map_room_text",
+                        StaticProvider(
+                            0.0, 0.0, 1f,
+                            StylizedTextHud.Anchor.Center,
+                            StylizedTextHud.Align.Center,
+                            options.stringShadow,
+                            StylizedTextHud.Backdrop.None,
+                        ),
+                        MCTextHudRenderer("internal_map_room_text_renderer"),
+                        false,
+                    )
+
+                    hud.x = ((decBox.x + decBox.w * 0.5) * compToBImgFW + bImgOX) / param.renderScale
+                    hud.y = ((decBox.y + decBox.h * 0.5) * compToBImgFH + bImgOY) / param.renderScale
+                    hud.scale = fontSize / StylizedTextHud.BASE_FONT_SIZE / param.renderScale
+                    hud.shadow = options.stringShadow
+
+                    hud.setLines(text)
+
+                    delegate.add(hud)
+                }
+
+                delegatedText.value = delegate
+            } else {
+                val fontSizeF = fontSize.toFloat()
+                val font = BImgTextHudRenderer.fontMainBase.deriveFont(Font.PLAIN, fontSizeF)
+                g.font = font
+                g.paint = Color(-1)
+                val ascent = g.fontMetrics.ascent
+
+                textToRender.forEach { (decBox, key, text) ->
+                    if (text.isEmpty()) return@forEach
+
+                    val rendered = cachedStrings.getOrPut(key) {
+                        val lines = text.map {
+                            StringParser.processString(
+                                it,
+                                g,
+                                font, font, font,
+                                fontSizeF
+                            )
+                        }
+                        val width = lines.maxOf { it.width }
+
+                        val w = ceil(width + options.stringShadow.getSizeIncrease(fontSizeF) + 5.0f).toInt()
+                        val h = fontSize * lines.size + ascent
+                        val img = bimgProvider.createJava(w, h)
+
+                        TextRendererImpl.drawImage(
+                            img, TextRenderer.RenderParams(
+                                StylizedTextHud.TextRenderParams(
+                                StylizedTextHud.Align.Center,
+                                options.stringShadow,
+                                StylizedTextHud.Backdrop.None,
+                                fontSizeF,
+                            ),
+                            lines,
+                            width,
+                            lines.maxOfOrNull { it.descent } ?: 0f,
+                            lines.maxOfOrNull { it.ascent } ?: 0f,
+                            true,
+                        ))
+
+                        CachedRenderedString(
+                            img,
+                            0.0, -ascent / 2.0,
+                            width.toDouble(),
+                            fontSize * lines.size.toDouble(),
+                        )
+                    }
+
+                    val box = BoundingBox(
+                        0.0, 0.0,
+                        rendered.w, rendered.h
+                    ).centerInside(
+                        BoundingBox(
+                            decBox.x * compToBImgFW + bImgOX,
+                            decBox.y * compToBImgFH + bImgOY,
+                            decBox.w * compToBImgFW,
+                            decBox.h * compToBImgFH
+                        )
+                    )
+
+                    val bx = (box.x + rendered.xo).toInt()
+                    val bz = (box.y + rendered.yo).toInt()
+                    g.drawImage(
+                        rendered.img,
+                        bx, bz,
+                        null
+                    )
+                }
+            }
+        }
+
+        g.dispose()
+        return img
+    }
+
+    companion object {
+        val CHECKMARK = listOf("illegalmap", "neu", "vanillaNew", "vanillaOld").map {
+            mapOf(
+                CheckmarkTypes.NONE to null,
+                CheckmarkTypes.WHITE to getImg("checks/$it/whiteCheck.png")!!,
+                CheckmarkTypes.GREEN to getImg("checks/$it/greenCheck.png")!!,
+                CheckmarkTypes.FAILED to getImg("checks/$it/failedRoom.png")!!,
+                CheckmarkTypes.UNEXPLORED to getImg("checks/$it/questionMark.png")!!,
+            )
+        }.toTypedArray()
+        val SPECIAL_ROOMS = mapOf(
+            "Creeper Beams" to getImg("puzzles/creeper.png")!!,
+            "Three Weirdos" to getImg("puzzles/chest.png")!!,
+            "Tic Tac Toe" to getImg("puzzles/shears.png")!!,
+            "Water Board" to getImg("puzzles/bucket_water.png")!!,
+            "Teleport Maze" to getImg("puzzles/endframe_side.png")!!,
+            "Blaze" to getImg("puzzles/blaze_powder.png")!!,
+            "Boulder" to getImg("puzzles/planks_oak.png")!!,
+            "Ice Fill" to getImg("puzzles/ice.png")!!,
+            "Ice Path" to getImg("puzzles/spawner.png")!!,
+            "Quiz" to getImg("puzzles/book_normal.png")!!,
+        )
+
+        private fun getImg(path: String): BufferedImage? {
+            val stream = this::class.java.getResourceAsStream("/assets/devonian/dungeons/map/$path") ?: return null
+            val img = ImageIO.read(stream)
+            return img
+        }
+    }
+}
+
+package com.github.synnerz.devonian.features.dungeons.map
+
+import com.github.synnerz.devonian.api.dungeon.DungeonDoor
+import com.github.synnerz.devonian.api.dungeon.DungeonRoom
+
+data class DungeonMapRenderData(
+    val rooms: List<DungeonRoom?>,
+    val doors: List<DungeonDoor?>,
+    val options: DungeonMapRenderOptions,
+    val renderScale: Int,
+)
+
+package com.github.synnerz.devonian.features.dungeons.map
+
+import com.github.synnerz.devonian.hud.texthud.StylizedTextHud
+import java.awt.Color
+
+data class DungeonMapRenderOptions(
+    val colors: Map<DungeonMapColors, Color>,
+    val roomWidth: Double, // [0, 1]
+    val doorWidth: Double, // [0, 1]
+    val dungeonWidth: Int, // number of rooms
+    val dungeonHeight: Int, // number of rooms
+    val padding: Double,
+    val border: Int,
+    val iconStyle: Int,
+    val checkMark: Boolean,
+    val puzzleIcon: Boolean,
+    val roomName: Boolean,
+    val roomNameNotEFB: Boolean,
+    val roomNameNotYellow: Boolean,
+    val roomNoFairyCheck: Boolean,
+    val roomNoCheckName: Boolean,
+    val roomCheckGreen: Boolean,
+    val secretCount: Boolean,
+    val no1Secret: Boolean,
+    val renderCheckIf0Secret: Boolean,
+    val puzzleName: Boolean,
+    val iconSize: Double, // [0, 1]
+    val iconAlignment: DungeonMapRoomInfoAlignment,
+    val textSize: Double, // [0, 1]
+    val textAlignment: DungeonMapRoomInfoAlignment,
+    val stringShadow: StylizedTextHud.Shadow,
+    val colorRoomName: Boolean,
+    val renderUnknownRooms: Boolean,
+    val dungeonStarted: Boolean,
+    val unknownRoomsDarkenFactor: Double, // [0, 1]
+    val delegateText: Boolean,
+)
+
+enum class DungeonMapColors {
+    Background,
+    Border,
+
+    RoomEntrance,
+    RoomNormal, RoomMiniboss,
+    RoomFairy, RoomBlood,
+    RoomPuzzle,
+    RoomTrap,
+    RoomYellow,
+    RoomRare,
+    RoomUnknown,
+
+    DoorNormal,
+    DoorEntrance,
+    DoorWither,
+    DoorBlood;
+}
+
+enum class DungeonMapRoomInfoAlignment(val str: String) {
+    // affects which "cell", not sub-cell position
+    TopLeft("Top Left"), TopRight("Top Right"),
+    BottomLeft("Bottom Left"), BottomRight("Bottom Right"),
+    Center("Center"), CenterL("CenterL");
+
+    companion object {
+        fun from(name: String) = entries.find { it.str == name } ?: Center
+    }
+}

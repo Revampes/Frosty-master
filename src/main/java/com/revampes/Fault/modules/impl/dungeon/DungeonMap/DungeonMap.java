@@ -20,8 +20,12 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
 
 import java.awt.Color;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 
@@ -220,6 +224,7 @@ public class DungeonMap extends Module {
             for (int rx = 0; rx < roomsX; rx++) {
                 DungeonMapState.RoomSnapshot room = state.getRoom(rx, rz);
                 int roomCode = state.getRoomColorValue(rx, rz);
+                int roomCenterCode = state.getRoomCenterColorValue(rx, rz);
                 if (roomCode == 0 && room == null) {
                     continue;
                 }
@@ -230,7 +235,7 @@ public class DungeonMap extends Module {
                 event.drawContext.fill(x1, y1, x1 + roomPx, y1 + roomPx, roomColor);
 
                 if (showCheckmarks.isToggled()) {
-                    drawRoomCheckmark(event, x1, y1, roomPx, roomCode, room);
+                    drawRoomCheckmark(event, x1, y1, roomPx, roomCenterCode, room);
                 }
 
                 if (showRoomNames.isToggled() && room != null && room.name() != null && !room.name().isBlank() && roomCode != 82 && roomCode != 85 && roomCode != 119) {
@@ -493,11 +498,9 @@ public class DungeonMap extends Module {
         int dotColor = teammateColor.getRGB();
 
         Set<Integer> usedMarkerIndices = new HashSet<>();
-        List<DungeonMapState.PlayerMarker> validMarkers = new ArrayList<>();
+        List<DungeonMapState.PlayerMarker> validMarkers = new ArrayList<>(markers.size());
         for (DungeonMapState.PlayerMarker marker : markers) {
-            float markerNx = (marker.mapX() - startX) / (float) mapPixelW;
-            float markerNz = (marker.mapZ() - startZ) / (float) mapPixelH;
-            if (markerNx < -0.50f || markerNx > 1.50f || markerNz < -0.50f || markerNz > 1.50f) {
+            if (marker == null) {
                 continue;
             }
             validMarkers.add(marker);
@@ -530,7 +533,7 @@ public class DungeonMap extends Module {
                 double dz = markerNz - nz;
                 double dist = dx * dx + dz * dz;
 
-                String label = marker.label() == null ? "" : marker.label().toLowerCase();
+                String label = sanitizeMarkerLabel(marker.label()).toLowerCase();
                 boolean labelMatch = !playerName.isBlank() && label.contains(playerName);
                 if (!labelMatch && dist > 0.0105) {
                     continue;
@@ -560,58 +563,192 @@ public class DungeonMap extends Module {
             int py = mapY + MathHelper.floor((float) nz * mapHeight);
             int color = player == mc.player ? 0xFF55FFFF : dotColor;
             int bg = player == mc.player ? 0xFF2B4D4D : 0xFF202020;
-            int half = 2 + (int) Math.round(playerHeadBackgroundSize.getInput());
-
-            if (half > 2) {
-                event.drawContext.fill(px - half, py - half, px + half, py + half, bg);
-            }
-            boolean drewHead = false;
-            try {
-                if (mc.getNetworkHandler() != null) {
-                    PlayerListEntry entry = mc.getNetworkHandler().getPlayerListEntry(player.getUuid());
-                    if (entry != null) {
-                        SkinTextures skins = entry.getSkinTextures();
-                        if (skins != null) {
-                            Object body = skins.body();
-                            Identifier skinId = null;
-                            if (body instanceof Identifier id) skinId = id;
-                            // Draw head from skin (base + overlay). Skin texture expected 64x64.
-                            if (skinId != null) {
-                                int headSize = Math.max(6, (int) Math.round(8 * mapScale.getInput()));
-                                int hx = px - headSize / 2;
-                                int hy = py - headSize / 2;
-                                // base head (u=8,v=8,w=8,h=8)
-                                event.drawContext.drawTexture(RenderPipelines.GUI_TEXTURED, skinId, hx, hy, 8.0f, 8.0f, headSize, headSize, 64, 64);
-                                // overlay (u=40,v=8,w=8,h=8)
-                                event.drawContext.drawTexture(RenderPipelines.GUI_TEXTURED, skinId, hx, hy, 40.0f, 8.0f, headSize, headSize, 64, 64);
-                                drewHead = true;
-                            }
-                        }
-                    }
-                }
-            } catch (Throwable ignored) {
-            }
-
-            if (!drewHead) {
-                event.drawContext.fill(px - 2, py - 2, px + 2, py + 2, color);
-                // draw a tiny directional indicator in front of the player dot using yaw
-                try {
-                    float yaw = player.getYaw();
-                    double rad = Math.toRadians(yaw);
-                    // Minecraft forward vector: X = -sin(yaw), Z = cos(yaw)
-                    int offX = MathHelper.floor(-Math.sin(rad) * 4.0);
-                    int offY = MathHelper.floor(Math.cos(rad) * 4.0);
-                    int dirX = px + offX;
-                    int dirY = py + offY;
-                    event.drawContext.fill(dirX - 1, dirY - 1, dirX + 1, dirY + 1, color);
-                } catch (Throwable ignored) {
-                }
-            }
+            drawMarkerHeadOrDot(event, player, px, py, color, bg);
 
             if (showTeammateNames.isToggled() && player.getName() != null) {
                 drawTeammateName(event, player.getName().getString(), px, py + 4);
             }
         }
+
+        for (int i = 0; i < validMarkers.size(); i++) {
+            if (usedMarkerIndices.contains(i)) {
+                continue;
+            }
+
+            DungeonMapState.PlayerMarker marker = validMarkers.get(i);
+            double nx = Math.max(0.0, Math.min(1.0, (marker.mapX() - startX) / (double) mapPixelW));
+            double nz = Math.max(0.0, Math.min(1.0, (marker.mapZ() - startZ) / (double) mapPixelH));
+            int px = mapX + MathHelper.floor((float) nx * mapWidth);
+            int py = mapY + MathHelper.floor((float) nz * mapHeight);
+
+            String label = sanitizeMarkerLabel(marker.label());
+            if (mc.player != null && !label.isBlank() && label.equalsIgnoreCase(mc.player.getName().getString())) {
+                continue;
+            }
+
+            drawFallbackMarker(event, px, py, dotColor, 0xFF202020);
+            if (showTeammateNames.isToggled() && !label.isBlank()) {
+                drawTeammateName(event, label, px, py + 4);
+            }
+        }
+    }
+
+    private void drawMarkerHeadOrDot(Render2DEvent event, PlayerEntity player, int px, int py, int color, int bg) {
+        int half = 2 + (int) Math.round(playerHeadBackgroundSize.getInput());
+        if (half > 2) {
+            event.drawContext.fill(px - half, py - half, px + half, py + half, bg);
+        }
+
+        Identifier skinId = resolvePlayerSkinIdentifier(player);
+        if (skinId != null) {
+            int headSize = Math.max(6, (int) Math.round(8 * mapScale.getInput()));
+            int hx = px - headSize / 2;
+            int hy = py - headSize / 2;
+            event.drawContext.drawTexture(RenderPipelines.GUI_TEXTURED, skinId, hx, hy, 8.0f, 8.0f, headSize, headSize, 64, 64);
+            event.drawContext.drawTexture(RenderPipelines.GUI_TEXTURED, skinId, hx, hy, 40.0f, 8.0f, headSize, headSize, 64, 64);
+            return;
+        }
+
+        drawFallbackMarker(event, px, py, color, bg);
+        try {
+            float yaw = player.getYaw();
+            double rad = Math.toRadians(yaw);
+            int offX = MathHelper.floor(-Math.sin(rad) * 4.0);
+            int offY = MathHelper.floor(Math.cos(rad) * 4.0);
+            int dirX = px + offX;
+            int dirY = py + offY;
+            event.drawContext.fill(dirX - 1, dirY - 1, dirX + 1, dirY + 1, color);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private void drawFallbackMarker(Render2DEvent event, int px, int py, int color, int bg) {
+        int half = 2 + (int) Math.round(playerHeadBackgroundSize.getInput());
+        if (half > 2) {
+            event.drawContext.fill(px - half, py - half, px + half, py + half, bg);
+        }
+        event.drawContext.fill(px - 2, py - 2, px + 2, py + 2, color);
+    }
+
+    private Identifier resolvePlayerSkinIdentifier(PlayerEntity player) {
+        if (player == null || mc == null || mc.getNetworkHandler() == null) {
+            return null;
+        }
+
+        PlayerListEntry entry = mc.getNetworkHandler().getPlayerListEntry(player.getUuid());
+        if (entry == null) {
+            return null;
+        }
+
+        SkinTextures skins = entry.getSkinTextures();
+        if (skins == null) {
+            return null;
+        }
+
+        try {
+            Identifier bodyId = extractIdentifierFromSkinPart(skins.body(), Collections.newSetFromMap(new IdentityHashMap<>()));
+            if (bodyId != null) {
+                return bodyId;
+            }
+        } catch (Throwable ignored) {
+        }
+
+        return extractIdentifierFromSkinPart(skins, Collections.newSetFromMap(new IdentityHashMap<>()));
+    }
+
+    private Identifier extractIdentifierFromSkinPart(Object value, Set<Object> visited) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Identifier id) {
+            return id;
+        }
+        if (value instanceof CharSequence seq) {
+            String raw = seq.toString();
+            if (!raw.contains(":")) {
+                return null;
+            }
+            try {
+                return Identifier.of(raw);
+            } catch (Throwable ignored) {
+                return null;
+            }
+        }
+        if (!visited.add(value)) {
+            return null;
+        }
+
+        if (value instanceof SkinTextures skins) {
+            try {
+                Identifier fromBody = extractIdentifierFromSkinPart(skins.body(), visited);
+                if (fromBody != null) {
+                    return fromBody;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+
+        Class<?> cls = value.getClass();
+        String[] preferredHints = new String[] {"texturepath", "texture", "path", "identifier", "asset"};
+
+        for (Method method : cls.getDeclaredMethods()) {
+            try {
+                if (method.getParameterCount() != 0) {
+                    continue;
+                }
+                String methodName = method.getName().toLowerCase();
+                if (!containsAnyHint(methodName, preferredHints)) {
+                    continue;
+                }
+                method.setAccessible(true);
+                Object nested = method.invoke(value);
+                Identifier id = extractIdentifierFromSkinPart(nested, visited);
+                if (id != null) {
+                    return id;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+
+        for (Field field : cls.getDeclaredFields()) {
+            try {
+                String fieldName = field.getName().toLowerCase();
+                if (!containsAnyHint(fieldName, preferredHints)) {
+                    continue;
+                }
+                field.setAccessible(true);
+                Object nested = field.get(value);
+                Identifier id = extractIdentifierFromSkinPart(nested, visited);
+                if (id != null) {
+                    return id;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+
+        return null;
+    }
+
+    private boolean containsAnyHint(String value, String[] hints) {
+        for (String hint : hints) {
+            if (value.contains(hint)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String sanitizeMarkerLabel(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        String cleaned = raw.replaceAll("(?i)\\u00A7[0-9A-FK-OR]", "");
+        cleaned = cleaned.replaceAll("[^A-Za-z0-9_ ]", " ").trim();
+        if (cleaned.isBlank()) {
+            return "";
+        }
+        String[] tokens = cleaned.split("\\s+");
+        return tokens.length == 0 ? "" : tokens[0];
     }
 
     private boolean isRenderablePlayer(PlayerEntity player) {
