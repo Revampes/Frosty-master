@@ -1,12 +1,5 @@
 package com.revampes.Fault.modules.impl.dungeon.DungeonMap;
 
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.chunk.WorldChunk;
-
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -18,6 +11,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+
+import net.minecraft.block.Block;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.Blocks;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.chunk.WorldChunk;
 
 public class DungeonMapState {
     public static final int CONNECTOR_UNKNOWN = -1;
@@ -198,6 +198,11 @@ public class DungeonMapState {
             worldFallbackHits++;
             this.colors = Arrays.copyOf(extracted, extracted.length);
             calibrateFromColors(extracted);
+        }
+
+        List<PlayerMarker> worldMarkers = tryExtractMarkersFromWorld(mc.world);
+        if (!worldMarkers.isEmpty()) {
+            markers = worldMarkers;
         }
 
         scanWorldModel(mc, true);
@@ -840,15 +845,70 @@ public class DungeonMapState {
         return null;
     }
 
+    private List<PlayerMarker> tryExtractMarkersFromWorld(Object world) {
+        if (world == null) {
+            return Collections.emptyList();
+        }
+
+        try {
+            for (Field field : world.getClass().getDeclaredFields()) {
+                field.setAccessible(true);
+                Object value = field.get(world);
+                if (!(value instanceof Map<?, ?> map) || map.isEmpty()) {
+                    continue;
+                }
+
+                for (Object state : map.values()) {
+                    if (state == null) {
+                        continue;
+                    }
+
+                    byte[] mapColors = findByteArray(state, 0, 4, Collections.newSetFromMap(new IdentityHashMap<>()));
+                    if (mapColors == null || mapColors.length != MAP_PIXELS || !looksLikeDungeonMap(mapColors)) {
+                        continue;
+                    }
+
+                    List<PlayerMarker> extracted = extractMarkers(state);
+                    if (!extracted.isEmpty()) {
+                        return extracted;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+
+        return Collections.emptyList();
+    }
+
     private List<PlayerMarker> extractMarkers(Object packet) {
         List<Object> decorations = findDecorations(packet);
         if (decorations.isEmpty()) {
             return Collections.emptyList();
         }
 
+        List<PlayerMarker> strict = collectMarkers(decorations, true);
+        List<PlayerMarker> permissive = collectMarkers(decorations, false);
+
+        if (strict.isEmpty()) {
+            return permissive;
+        }
+
+        // Some server implementations use non-player marker types for teammates.
+        // If strict parsing returns fewer markers, prefer the broader non-frame parse.
+        if (!permissive.isEmpty() && permissive.size() > strict.size() && permissive.size() <= 8) {
+            return permissive;
+        }
+
+        return strict;
+    }
+
+    private static List<PlayerMarker> collectMarkers(List<Object> decorations, boolean requirePlayerType) {
         List<PlayerMarker> result = new ArrayList<>();
         for (Object decoration : decorations) {
-            if (decoration == null || isFrameDecoration(decoration) || !isPlayerDecoration(decoration)) {
+            if (decoration == null || isFrameDecoration(decoration)) {
+                continue;
+            }
+            if (requirePlayerType && !isPlayerDecoration(decoration)) {
                 continue;
             }
 
@@ -882,7 +942,8 @@ public class DungeonMapState {
         for (Method method : cls.getDeclaredMethods()) {
             try {
                 if (method.getParameterCount() != 0) continue;
-                if (!method.getName().toLowerCase().contains("decoration")) continue;
+                String methodName = method.getName().toLowerCase();
+                if (!methodName.contains("decoration") && !methodName.contains("icon")) continue;
                 method.setAccessible(true);
                 Object value = method.invoke(packet);
                 List<Object> out = toObjectList(value);
@@ -895,7 +956,8 @@ public class DungeonMapState {
 
         for (Field field : cls.getDeclaredFields()) {
             try {
-                if (!field.getName().toLowerCase().contains("decoration")) continue;
+                String fieldName = field.getName().toLowerCase();
+                if (!fieldName.contains("decoration") && !fieldName.contains("icon")) continue;
                 field.setAccessible(true);
                 Object value = field.get(packet);
                 List<Object> out = toObjectList(value);
@@ -906,7 +968,57 @@ public class DungeonMapState {
             }
         }
 
+        // Fallback for mappings where decoration containers are obfuscated and do not
+        // include readable field names like "decoration" or "icon".
+        for (Field field : cls.getDeclaredFields()) {
+            try {
+                field.setAccessible(true);
+                Object value = field.get(packet);
+                List<Object> out = toObjectList(value);
+                if (looksLikeDecorationCollection(out)) {
+                    return out;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+
         return Collections.emptyList();
+    }
+
+    private static boolean looksLikeDecorationCollection(List<Object> values) {
+        if (values == null || values.isEmpty()) {
+            return false;
+        }
+
+        int markerLike = 0;
+        for (Object value : values) {
+            if (value == null) {
+                continue;
+            }
+
+            Integer x = readNumeric(value, "x");
+            Integer z = readNumeric(value, "z");
+            if (z == null) {
+                z = readNumeric(value, "y");
+            }
+
+            if (x == null || z == null) {
+                continue;
+            }
+
+            Object type = readMember(value, "type");
+            Object id = readMember(value, "id");
+            Integer rot = readNumeric(value, "rot");
+            Integer rotation = readNumeric(value, "rotation");
+            if (type != null || id != null || rot != null || rotation != null) {
+                markerLike++;
+                if (markerLike >= 1) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static List<Object> toObjectList(Object value) {
@@ -924,6 +1036,12 @@ public class DungeonMapState {
         if (value instanceof List<?> list) {
             List<Object> out = new ArrayList<>();
             out.addAll(list);
+            return out;
+        }
+
+        if (value instanceof Map<?, ?> map) {
+            List<Object> out = new ArrayList<>();
+            out.addAll(map.values());
             return out;
         }
 
@@ -985,14 +1103,53 @@ public class DungeonMapState {
             return false;
         }
         String text = value.toString().toLowerCase();
-        return text.contains("player") || text.contains("off_map") || text.contains("off_limits");
+        String normalized = text.replace('-', '_').replace(' ', '_');
+        if (normalized.contains("player") || normalized.contains("off_map") || normalized.contains("off_limits")) {
+            return true;
+        }
+        return normalized.contains("off") && (normalized.contains("map") || normalized.contains("limit"));
     }
 
     private static Integer readNumeric(Object object, String key) {
-        Object value = readMember(object, key);
-        if (value instanceof Number number) {
-            return number.intValue();
+        if (object == null) {
+            return null;
         }
+
+        Class<?> cls = object.getClass();
+
+        for (Method method : cls.getDeclaredMethods()) {
+            try {
+                if (method.getParameterCount() != 0) continue;
+                String name = method.getName().toLowerCase();
+                if (!name.contains(key)) continue;
+                method.setAccessible(true);
+                Object value = method.invoke(object);
+                if (value instanceof Optional<?> opt) {
+                    value = opt.orElse(null);
+                }
+                if (value instanceof Number number) {
+                    return number.intValue();
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+
+        for (Field field : cls.getDeclaredFields()) {
+            try {
+                String name = field.getName().toLowerCase();
+                if (!name.contains(key)) continue;
+                field.setAccessible(true);
+                Object value = field.get(object);
+                if (value instanceof Optional<?> opt) {
+                    value = opt.orElse(null);
+                }
+                if (value instanceof Number number) {
+                    return number.intValue();
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+
         return null;
     }
 

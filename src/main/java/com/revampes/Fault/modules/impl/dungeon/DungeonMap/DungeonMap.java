@@ -1,5 +1,11 @@
 package com.revampes.Fault.modules.impl.dungeon.DungeonMap;
 
+import java.awt.Color;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
 import com.revampes.Fault.events.impl.ReceivePacketEvent;
 import com.revampes.Fault.events.impl.Render2DEvent;
 import com.revampes.Fault.modules.Module;
@@ -9,22 +15,17 @@ import com.revampes.Fault.settings.impl.ColorSetting;
 import com.revampes.Fault.settings.impl.SliderSetting;
 import com.revampes.Fault.utility.DungeonUtils;
 import com.revampes.Fault.utility.Utils;
+
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.gui.PlayerSkinDrawer;
 import net.minecraft.client.network.OtherClientPlayerEntity;
+import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.entity.player.SkinTextures;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
-
-import java.awt.Color;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
 
 public class DungeonMap extends Module {
     private static final Identifier GREEN_CHECK_ICON = Identifier.of("revampes", "dungeonmap/bloom_map_green_check.png");
@@ -43,6 +44,7 @@ public class DungeonMap extends Module {
     private final SliderSetting playerHeadBackgroundSize = new SliderSetting("Player Head BG Size", 1, 0, 10, 1);
 
     private final ButtonSetting onlyInDungeon = new ButtonSetting("Only in Dungeon", true);
+    private final ButtonSetting disableInBoss = new ButtonSetting("Disable in Boss", true);
     private final ButtonSetting showRoomNames = new ButtonSetting("Show Room Names", true);
     private final ButtonSetting showCheckmarks = new ButtonSetting("Show Checkmarks", true);
     private final ButtonSetting showTeammateIcons = new ButtonSetting("Show Teammates", true);
@@ -86,8 +88,8 @@ public class DungeonMap extends Module {
         "shadow assassin", "king midas", "frozen adventurer", "crypt lurker", "crypt undead", "crypt dreadlord",
         "tank zombie", "super tank zombie", "zombie grunt", "zombie soldier", "zombie knight", "zombie commander",
         "zombie lord", "undead skeleton", "scared skeleton", "skeleton grunt", "skeleton master", "skeleton lord",
-        "sniper", "crypt souleater", " lonely spider", "cellar spider", "withermancer", "skeletor", "skeletor prime",
-        "super archer", "fels", "mimic", "deathmite", "blaze", "bat", "prince", "fairy", "revoker", "psycho", 
+        "sniper", "crypt souleater", "lonely spider", "cellar spider", "withermancer", "skeletor", "skeletor prime",
+        "super archer", "fels", "mimic", "deathmite", "blaze", "bat", "prince", "fairy", "revoker", "psycho",
         "reaper", "parasite", "cannibal", "mute", "ooze", "putrid", "freak", "leech", "flamer", "tear", "skull",
         "mr. dead", "vader", "frost", "walker", "wandering soul", "giant"
     };
@@ -107,6 +109,7 @@ public class DungeonMap extends Module {
         this.registerSetting(playerHeadBackgroundSize);
 
         this.registerSetting(onlyInDungeon);
+    this.registerSetting(disableInBoss);
         this.registerSetting(showRoomNames);
         this.registerSetting(showCheckmarks);
         this.registerSetting(showTeammateIcons);
@@ -179,6 +182,9 @@ public class DungeonMap extends Module {
         if (!Utils.nullCheck()) {
             return;
         }
+        if (shouldHideForPlayerList()) {
+            return;
+        }
 
         if (mc.world == null) {
             if (wasInDungeon || state.hasData()) {
@@ -209,6 +215,10 @@ public class DungeonMap extends Module {
         }
         wasInDungeon = inDungeon;
 
+        if (disableInBoss.isToggled() && DungeonUtils.inBoss()) {
+            return;
+        }
+
         int mapX = (int) ((event.screenWidth * xPos.getInput()) / 100.0);
         int mapY = (int) ((event.screenHeight * yPos.getInput()) / 100.0);
 
@@ -219,12 +229,6 @@ public class DungeonMap extends Module {
         }
 
         if (!state.hasData()) {
-            int w = 220;
-            int h = 30;
-            event.drawContext.fill(mapX, mapY, mapX + w, mapY + h, backgroundColor.getRGB());
-            event.drawContext.drawText(mc.textRenderer, "DungeonMap: waiting for map data", mapX + 4, mapY + 4, roomNameColor.getRGB(), true);
-            String diag = "packets=" + state.getMapPacketsSeen() + " parsed=" + state.getMapPacketsParsed() + " fallback=" + state.getWorldFallbackHits();
-            event.drawContext.drawText(mc.textRenderer, diag, mapX + 4, mapY + 16, roomNameColor.getRGB(), true);
             return;
         }
 
@@ -574,9 +578,6 @@ public class DungeonMap extends Module {
 
                 String label = sanitizeMarkerLabel(marker.label()).toLowerCase();
                 boolean labelMatch = !playerName.isBlank() && label.contains(playerName);
-                if (!labelMatch && dist > 0.0105) {
-                    continue;
-                }
 
                 double score = labelMatch ? dist - 1.0 : dist;
                 if (score < bestDist) {
@@ -717,11 +718,13 @@ public class DungeonMap extends Module {
         String name = player.getName() == null ? "" : player.getName().getString();
         String displayLower = display.toLowerCase();
         String nameLower = name.toLowerCase();
+
         for (String keyword : NAME_FILTER) {
             if (displayLower.contains(keyword) || nameLower.contains(keyword)) {
                 return false;
             }
         }
+
         if (displayLower.contains("[lv]") || nameLower.contains("[lv]")) {
             return false;
         }
@@ -740,6 +743,26 @@ public class DungeonMap extends Module {
         }
 
         return true;
+    }
+
+    private boolean shouldHideForPlayerList() {
+        if (mc == null) {
+            return false;
+        }
+
+        try {
+            if (mc.options != null && mc.options.playerListKey != null && mc.options.playerListKey.isPressed()) {
+                return true;
+            }
+        } catch (Throwable ignored) {
+        }
+
+        try {
+            return mc.currentScreen != null
+                && mc.currentScreen.getClass().getSimpleName().toLowerCase().contains("playerlist");
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private boolean isNpcLike(PlayerEntity player) {
