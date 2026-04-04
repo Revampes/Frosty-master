@@ -2,6 +2,7 @@ package com.revampes.Fault.modules.impl.dungeon.DungeonMap;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.RecordComponent;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -912,12 +913,10 @@ public class DungeonMapState {
                 continue;
             }
 
-            Integer x = readNumeric(decoration, "x");
-            Integer z = readNumeric(decoration, "y");
-            if (z == null) {
-                z = readNumeric(decoration, "z");
-            }
-            Integer rot = readNumeric(decoration, "rot");
+            MarkerNumbers markerNumbers = readMarkerNumbers(decoration);
+            Integer x = markerNumbers.x();
+            Integer z = markerNumbers.z();
+            Integer rot = markerNumbers.rotation();
 
             if (x == null || z == null) {
                 continue;
@@ -996,11 +995,9 @@ public class DungeonMapState {
                 continue;
             }
 
-            Integer x = readNumeric(value, "x");
-            Integer z = readNumeric(value, "z");
-            if (z == null) {
-                z = readNumeric(value, "y");
-            }
+            MarkerNumbers markerNumbers = readMarkerNumbers(value);
+            Integer x = markerNumbers.x();
+            Integer z = markerNumbers.z();
 
             if (x == null || z == null) {
                 continue;
@@ -1008,8 +1005,8 @@ public class DungeonMapState {
 
             Object type = readMember(value, "type");
             Object id = readMember(value, "id");
-            Integer rot = readNumeric(value, "rot");
-            Integer rotation = readNumeric(value, "rotation");
+            Integer rot = markerNumbers.rotation();
+            Integer rotation = rot;
             if (type != null || id != null || rot != null || rotation != null) {
                 markerLike++;
                 if (markerLike >= 1) {
@@ -1108,6 +1105,113 @@ public class DungeonMapState {
             return true;
         }
         return normalized.contains("off") && (normalized.contains("map") || normalized.contains("limit"));
+    }
+
+    private static MarkerNumbers readMarkerNumbers(Object object) {
+        Integer x = readNumeric(object, "x");
+        Integer z = readNumeric(object, "y");
+        if (z == null) {
+            z = readNumeric(object, "z");
+        }
+        Integer rotation = readNumeric(object, "rot");
+        if (rotation == null) {
+            rotation = readNumeric(object, "rotation");
+        }
+
+        if (x != null && z != null) {
+            return new MarkerNumbers(x, z, rotation);
+        }
+
+        List<Integer> byteLike = readByteLikeNumbers(object);
+        if (x == null && byteLike.size() >= 1) {
+            x = byteLike.get(0);
+        }
+        if (z == null && byteLike.size() >= 2) {
+            z = byteLike.get(1);
+        }
+        if (rotation == null) {
+            for (int i = 2; i < byteLike.size(); i++) {
+                int candidate = byteLike.get(i);
+                if (candidate >= 0 && candidate <= 15) {
+                    rotation = candidate;
+                    break;
+                }
+            }
+            if (rotation == null && byteLike.size() >= 3) {
+                rotation = clamp(byteLike.get(2), 0, 15);
+            }
+        }
+
+        return new MarkerNumbers(x, z, rotation);
+    }
+
+    private static List<Integer> readByteLikeNumbers(Object object) {
+        if (object == null) {
+            return Collections.emptyList();
+        }
+
+        Class<?> cls = object.getClass();
+        List<Integer> numbers = new ArrayList<>(6);
+
+        if (cls.isRecord()) {
+            try {
+                RecordComponent[] components = cls.getRecordComponents();
+                if (components != null) {
+                    for (RecordComponent component : components) {
+                        Method accessor = component.getAccessor();
+                        if (accessor == null || accessor.getParameterCount() != 0) {
+                            continue;
+                        }
+                        accessor.setAccessible(true);
+                        appendByteLikeNumber(numbers, accessor.invoke(object));
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+
+        for (Field field : cls.getDeclaredFields()) {
+            try {
+                field.setAccessible(true);
+                appendByteLikeNumber(numbers, field.get(object));
+            } catch (Throwable ignored) {
+            }
+        }
+
+        if (numbers.size() >= 3) {
+            return numbers;
+        }
+
+        for (Method method : cls.getDeclaredMethods()) {
+            try {
+                if (method.getParameterCount() != 0) {
+                    continue;
+                }
+                String name = method.getName();
+                if ("hashCode".equals(name) || "toString".equals(name) || "getClass".equals(name)) {
+                    continue;
+                }
+                method.setAccessible(true);
+                appendByteLikeNumber(numbers, method.invoke(object));
+            } catch (Throwable ignored) {
+            }
+        }
+
+        return numbers;
+    }
+
+    private static void appendByteLikeNumber(List<Integer> out, Object value) {
+        if (value instanceof Optional<?> opt) {
+            value = opt.orElse(null);
+        }
+        if (!(value instanceof Number number)) {
+            return;
+        }
+
+        int intValue = number.intValue();
+        if (intValue >= -128 && intValue <= 127) {
+            out.add(intValue);
+        }
     }
 
     private static Integer readNumeric(Object object, String key) {
@@ -1381,6 +1485,9 @@ public class DungeonMapState {
     }
 
     private record Pair(int start, int length) {
+    }
+
+    private record MarkerNumbers(Integer x, Integer z, Integer rotation) {
     }
 
     public record RoomSnapshot(int roomId, DungeonRoomDatabase.RoomKind kind, String name, int mapColor) {
