@@ -11,6 +11,7 @@ import com.revampes.Fault.utility.DungeonUtils;
 import com.revampes.Fault.utility.Utils;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.client.gl.RenderPipelines;
+import net.minecraft.client.gui.PlayerSkinDrawer;
 import net.minecraft.client.network.OtherClientPlayerEntity;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.player.PlayerEntity;
@@ -20,12 +21,8 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
 
 import java.awt.Color;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashSet;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 
@@ -42,6 +39,7 @@ public class DungeonMap extends Module {
     private final SliderSetting doorThickness = new SliderSetting("Door Thickness", 9, 1, 16, 1);
     private final SliderSetting roomTextScale = new SliderSetting("Room Text Scale", 0.60, 0.25, 2.0, 0.05);
     private final SliderSetting teammateNameScale = new SliderSetting("Teammate Name Scale", 0.90, 0.25, 2.0, 0.05);
+    private final SliderSetting teammateNameGap = new SliderSetting("Teammate Name Gap", "px", 2, -20, 40, 1);
     private final SliderSetting playerHeadBackgroundSize = new SliderSetting("Player Head BG Size", 1, 0, 10, 1);
 
     private final ButtonSetting onlyInDungeon = new ButtonSetting("Only in Dungeon", true);
@@ -82,6 +80,7 @@ public class DungeonMap extends Module {
     private final DungeonMapState state = new DungeonMapState();
     private long lastWorldFallbackTryMs = 0L;
     private boolean wasInDungeon = false;
+    private int lastWorldIdentityHash = Integer.MIN_VALUE;
     private static final String[] NAME_FILTER = new String[] {
         "the watcher", "bonzo", "scarf", "livid", "sadan", "lost adventurer", "angry archaeologist", "redstone warrior",
         "shadow assassin", "king midas", "frozen adventurer", "crypt lurker", "crypt undead", "crypt dreadlord",
@@ -104,6 +103,7 @@ public class DungeonMap extends Module {
         this.registerSetting(doorThickness);
         this.registerSetting(roomTextScale);
         this.registerSetting(teammateNameScale);
+        this.registerSetting(teammateNameGap);
         this.registerSetting(playerHeadBackgroundSize);
 
         this.registerSetting(onlyInDungeon);
@@ -142,12 +142,14 @@ public class DungeonMap extends Module {
         this.registerSetting(roomNameColor);
 
         showTeammateNames.setVisibilityCondition(showTeammateIcons::isToggled);
+        teammateNameGap.setVisibilityCondition(() -> showTeammateIcons.isToggled() && showTeammateNames.isToggled());
     }
 
     @Override
     public void onDisable() {
         state.clear();
         wasInDungeon = false;
+        lastWorldIdentityHash = Integer.MIN_VALUE;
     }
 
     @EventHandler
@@ -178,8 +180,27 @@ public class DungeonMap extends Module {
             return;
         }
 
+        if (mc.world == null) {
+            if (wasInDungeon || state.hasData()) {
+                state.clear();
+            }
+            wasInDungeon = false;
+            lastWorldIdentityHash = Integer.MIN_VALUE;
+            return;
+        }
+
+        int worldIdentityHash = System.identityHashCode(mc.world);
+        if (worldIdentityHash != lastWorldIdentityHash) {
+            if (state.hasData()) {
+                state.clear();
+            }
+            lastWorldFallbackTryMs = 0L;
+            wasInDungeon = false;
+            lastWorldIdentityHash = worldIdentityHash;
+        }
+
         boolean inDungeon = DungeonUtils.isInDungeon();
-        if (mc.world == null || (onlyInDungeon.isToggled() && !inDungeon)) {
+        if (!inDungeon) {
             if (wasInDungeon || state.hasData()) {
                 state.clear();
             }
@@ -332,6 +353,18 @@ public class DungeonMap extends Module {
     }
 
     private int getRoomColor(DungeonMapState.RoomSnapshot room, int mapColorCode) {
+        DungeonRoomDatabase.RoomKind kind = room == null ? DungeonRoomDatabase.RoomKind.UNKNOWN : room.kind();
+
+        if (kind == DungeonRoomDatabase.RoomKind.FAIRY) {
+            return fairyRoomColor.getRGB();
+        }
+        if (kind == DungeonRoomDatabase.RoomKind.ENTRANCE) {
+            return entranceRoomColor.getRGB();
+        }
+        if (kind == DungeonRoomDatabase.RoomKind.BLOOD) {
+            return bloodRoomColor.getRGB();
+        }
+
         if (mapColorCode == 0) {
             return unknownRoomColor.getRGB();
         }
@@ -346,7 +379,6 @@ public class DungeonMap extends Module {
             return bloodRoomColor.getRGB();
         }
 
-        DungeonRoomDatabase.RoomKind kind = room == null ? DungeonRoomDatabase.RoomKind.UNKNOWN : room.kind();
         return switch (kind) {
             case BLOOD -> bloodRoomColor.getRGB();
             case CHAMPION -> championRoomColor.getRGB();
@@ -384,7 +416,14 @@ public class DungeonMap extends Module {
         return switch (mapDoorCode) {
             case 119 -> witherDoorColor.getRGB();
             case 18 -> bloodDoorColor.getRGB();
-            case 0, 82, 85 -> unopenedDoorColor.getRGB();
+            case 82, 85 -> {
+                DungeonRoomDatabase.RoomKind special = pickSpecialKind(roomA, roomB);
+                if (special != DungeonRoomDatabase.RoomKind.NORMAL && special != DungeonRoomDatabase.RoomKind.UNKNOWN) {
+                    yield dynamicNormalDoor(roomA, roomB);
+                }
+                yield unopenedDoorColor.getRGB();
+            }
+            case 0 -> unopenedDoorColor.getRGB();
             default -> dynamicNormalDoor(roomA, roomB);
         };
     }
@@ -566,7 +605,7 @@ public class DungeonMap extends Module {
             drawMarkerHeadOrDot(event, player, px, py, color, bg);
 
             if (showTeammateNames.isToggled() && player.getName() != null) {
-                drawTeammateName(event, player.getName().getString(), px, py + 4);
+                drawTeammateName(event, player.getName().getString(), px, getTeammateNameY(py));
             }
         }
 
@@ -588,7 +627,7 @@ public class DungeonMap extends Module {
 
             drawFallbackMarker(event, px, py, dotColor, 0xFF202020);
             if (showTeammateNames.isToggled() && !label.isBlank()) {
-                drawTeammateName(event, label, px, py + 4);
+                drawTeammateName(event, label, px, getTeammateNameY(py));
             }
         }
     }
@@ -599,13 +638,33 @@ public class DungeonMap extends Module {
             event.drawContext.fill(px - half, py - half, px + half, py + half, bg);
         }
 
-        Identifier skinId = resolvePlayerSkinIdentifier(player);
-        if (skinId != null) {
-            int headSize = Math.max(6, (int) Math.round(8 * mapScale.getInput()));
-            int hx = px - headSize / 2;
-            int hy = py - headSize / 2;
-            event.drawContext.drawTexture(RenderPipelines.GUI_TEXTURED, skinId, hx, hy, 8.0f, 8.0f, headSize, headSize, 64, 64);
-            event.drawContext.drawTexture(RenderPipelines.GUI_TEXTURED, skinId, hx, hy, 40.0f, 8.0f, headSize, headSize, 64, 64);
+        boolean drewHead = false;
+        try {
+            if (mc != null && mc.getNetworkHandler() != null) {
+                PlayerListEntry entry = mc.getNetworkHandler().getPlayerListEntry(player.getUuid());
+                if (entry != null) {
+                    SkinTextures textures = entry.getSkinTextures();
+                    if (textures != null) {
+                        int headSize = Math.max(6, (int) Math.round(8 * mapScale.getInput()));
+                        float rotationRad = (float) Math.toRadians(player.getYaw() + 180.0f);
+
+                        event.drawContext.getMatrices().pushMatrix();
+                        try {
+                            event.drawContext.getMatrices().translate(px, py);
+                            event.drawContext.getMatrices().rotate(rotationRad);
+                            event.drawContext.getMatrices().translate(-headSize / 2.0f, -headSize / 2.0f);
+                            PlayerSkinDrawer.draw(event.drawContext, textures, 0, 0, headSize, -1);
+                        } finally {
+                            event.drawContext.getMatrices().popMatrix();
+                        }
+                        drewHead = true;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+
+        if (drewHead) {
             return;
         }
 
@@ -628,114 +687,6 @@ public class DungeonMap extends Module {
             event.drawContext.fill(px - half, py - half, px + half, py + half, bg);
         }
         event.drawContext.fill(px - 2, py - 2, px + 2, py + 2, color);
-    }
-
-    private Identifier resolvePlayerSkinIdentifier(PlayerEntity player) {
-        if (player == null || mc == null || mc.getNetworkHandler() == null) {
-            return null;
-        }
-
-        PlayerListEntry entry = mc.getNetworkHandler().getPlayerListEntry(player.getUuid());
-        if (entry == null) {
-            return null;
-        }
-
-        SkinTextures skins = entry.getSkinTextures();
-        if (skins == null) {
-            return null;
-        }
-
-        try {
-            Identifier bodyId = extractIdentifierFromSkinPart(skins.body(), Collections.newSetFromMap(new IdentityHashMap<>()));
-            if (bodyId != null) {
-                return bodyId;
-            }
-        } catch (Throwable ignored) {
-        }
-
-        return extractIdentifierFromSkinPart(skins, Collections.newSetFromMap(new IdentityHashMap<>()));
-    }
-
-    private Identifier extractIdentifierFromSkinPart(Object value, Set<Object> visited) {
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Identifier id) {
-            return id;
-        }
-        if (value instanceof CharSequence seq) {
-            String raw = seq.toString();
-            if (!raw.contains(":")) {
-                return null;
-            }
-            try {
-                return Identifier.of(raw);
-            } catch (Throwable ignored) {
-                return null;
-            }
-        }
-        if (!visited.add(value)) {
-            return null;
-        }
-
-        if (value instanceof SkinTextures skins) {
-            try {
-                Identifier fromBody = extractIdentifierFromSkinPart(skins.body(), visited);
-                if (fromBody != null) {
-                    return fromBody;
-                }
-            } catch (Throwable ignored) {
-            }
-        }
-
-        Class<?> cls = value.getClass();
-        String[] preferredHints = new String[] {"texturepath", "texture", "path", "identifier", "asset"};
-
-        for (Method method : cls.getDeclaredMethods()) {
-            try {
-                if (method.getParameterCount() != 0) {
-                    continue;
-                }
-                String methodName = method.getName().toLowerCase();
-                if (!containsAnyHint(methodName, preferredHints)) {
-                    continue;
-                }
-                method.setAccessible(true);
-                Object nested = method.invoke(value);
-                Identifier id = extractIdentifierFromSkinPart(nested, visited);
-                if (id != null) {
-                    return id;
-                }
-            } catch (Throwable ignored) {
-            }
-        }
-
-        for (Field field : cls.getDeclaredFields()) {
-            try {
-                String fieldName = field.getName().toLowerCase();
-                if (!containsAnyHint(fieldName, preferredHints)) {
-                    continue;
-                }
-                field.setAccessible(true);
-                Object nested = field.get(value);
-                Identifier id = extractIdentifierFromSkinPart(nested, visited);
-                if (id != null) {
-                    return id;
-                }
-            } catch (Throwable ignored) {
-            }
-        }
-
-        return null;
-    }
-
-    private boolean containsAnyHint(String value, String[] hints) {
-        for (String hint : hints) {
-            if (value.contains(hint)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private String sanitizeMarkerLabel(String raw) {
@@ -803,6 +754,12 @@ public class DungeonMap extends Module {
         } catch (Throwable ignored) {
             return false;
         }
+    }
+
+    private int getTeammateNameY(int markerY) {
+        int headSize = Math.max(6, (int) Math.round(8 * mapScale.getInput()));
+        int gap = (int) Math.round(teammateNameGap.getInput());
+        return markerY + (headSize / 2) + gap;
     }
 
     private void drawTeammateName(Render2DEvent event, String text, int x, int y) {

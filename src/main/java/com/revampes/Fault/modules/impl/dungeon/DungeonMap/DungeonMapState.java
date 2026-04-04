@@ -177,7 +177,11 @@ public class DungeonMapState {
         }
 
         mapPacketsParsed++;
-        markers = packetMarkers;
+        // Some map packets carry no decoration payload (delta updates).
+        // Keep the last non-empty marker set so far teammates do not disappear.
+        if (!packetMarkers.isEmpty()) {
+            markers = packetMarkers;
+        }
         this.colors = Arrays.copyOf(extracted, extracted.length);
         calibrateFromColors(extracted);
         scanWorldModel(mc, false);
@@ -370,9 +374,10 @@ public class DungeonMapState {
     private RoomSnapshot buildFallbackRoomSnapshot(RoomSnapshot previous, int mapColor) {
         DungeonRoomDatabase.RoomKind inferredKind = inferRoomKindFromMapColor(mapColor, previous);
         if (previous != null) {
-            DungeonRoomDatabase.RoomKind finalKind = previous.kind() != DungeonRoomDatabase.RoomKind.UNKNOWN
-                ? previous.kind()
-                : inferredKind;
+            boolean forceMapKind = shouldForceMapInferredKind(mapColor, inferredKind);
+            DungeonRoomDatabase.RoomKind finalKind = forceMapKind
+                ? inferredKind
+                : (previous.kind() != DungeonRoomDatabase.RoomKind.UNKNOWN ? previous.kind() : inferredKind);
             String name = (previous.name() == null || previous.name().isBlank())
                 ? defaultNameForKind(finalKind)
                 : previous.name();
@@ -385,6 +390,13 @@ public class DungeonMapState {
         String name = defaultNameForKind(inferredKind);
         int roomId = name.isBlank() ? 0 : name.hashCode();
         return new RoomSnapshot(roomId, inferredKind, name, mapColor);
+    }
+
+    private boolean shouldForceMapInferredKind(int mapColor, DungeonRoomDatabase.RoomKind inferredKind) {
+        if (inferredKind == DungeonRoomDatabase.RoomKind.UNKNOWN) {
+            return false;
+        }
+        return mapColor == 82 || mapColor == 30 || mapColor == 18 || mapColor == 62 || mapColor == 66 || mapColor == 74;
     }
 
     private DungeonRoomDatabase.RoomKind inferRoomKindFromMapColor(int mapColor, RoomSnapshot previous) {
