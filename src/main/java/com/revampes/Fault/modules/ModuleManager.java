@@ -15,6 +15,7 @@ import com.revampes.Fault.modules.impl.dungeon.KeyHighlight;
 import com.revampes.Fault.modules.impl.dungeon.LividESP;
 import com.revampes.Fault.modules.impl.dungeon.MobHighlight;
 import com.revampes.Fault.modules.impl.dungeon.PuzzleSolver.BlazeSolver;
+import com.revampes.Fault.modules.impl.dungeon.PuzzleSolver.ThreeWeirdosSolver;
 import com.revampes.Fault.modules.impl.dungeon.SecretClick;
 import com.revampes.Fault.modules.impl.dungeon.ThornStun;
 import com.revampes.Fault.modules.impl.dungeon.DungeonMap.DungeonMap;
@@ -137,6 +138,7 @@ public class ModuleManager {
     public static LividESP lividESP;
     public static MobHighlight mobHighlight;
     public static BlazeSolver blazeSolver;
+    public static ThreeWeirdosSolver threeWeirdosSolver;
     public static BuildHelper buildHelper;
     public static RemovePerks removePerks;
     public static ThornStun thornStun;
@@ -212,6 +214,7 @@ public class ModuleManager {
         this.addModule(lividESP = new LividESP());
         this.addModule(mobHighlight = new MobHighlight());
         this.addModule(blazeSolver = new BlazeSolver());
+        this.addModule(threeWeirdosSolver = new ThreeWeirdosSolver());
         this.addModule(buildHelper = new BuildHelper());
         this.addModule(removePerks = new RemovePerks());
         this.addModule(thornStun = new ThornStun());
