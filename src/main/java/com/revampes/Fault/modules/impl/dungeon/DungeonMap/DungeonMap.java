@@ -2,8 +2,10 @@ package com.revampes.Fault.modules.impl.dungeon.DungeonMap;
 
 import java.awt.Color;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import com.revampes.Fault.events.impl.ReceivePacketEvent;
@@ -83,6 +85,10 @@ public class DungeonMap extends Module {
     private long lastWorldFallbackTryMs = 0L;
     private boolean wasInDungeon = false;
     private int lastWorldIdentityHash = Integer.MIN_VALUE;
+    private final Map<Integer, String> markerIndexNameCache = new HashMap<>();
+    private static final Set<String> RANK_TOKENS = Set.of(
+        "VIP", "MVP", "ADMIN", "MOD", "HELPER", "GM", "YT", "PIG", "NONE"
+    );
     private static final String[] NAME_FILTER = new String[] {
         "the watcher", "bonzo", "scarf", "livid", "sadan", "lost adventurer", "angry archaeologist", "redstone warrior",
         "shadow assassin", "king midas", "frozen adventurer", "crypt lurker", "crypt undead", "crypt dreadlord",
@@ -151,6 +157,7 @@ public class DungeonMap extends Module {
     @Override
     public void onDisable() {
         state.clear();
+        markerIndexNameCache.clear();
         wasInDungeon = false;
         lastWorldIdentityHash = Integer.MIN_VALUE;
     }
@@ -189,6 +196,7 @@ public class DungeonMap extends Module {
         if (mc.world == null) {
             if (wasInDungeon || state.hasData()) {
                 state.clear();
+                markerIndexNameCache.clear();
             }
             wasInDungeon = false;
             lastWorldIdentityHash = Integer.MIN_VALUE;
@@ -199,6 +207,7 @@ public class DungeonMap extends Module {
         if (worldIdentityHash != lastWorldIdentityHash) {
             if (state.hasData()) {
                 state.clear();
+                markerIndexNameCache.clear();
             }
             lastWorldFallbackTryMs = 0L;
             wasInDungeon = false;
@@ -209,6 +218,7 @@ public class DungeonMap extends Module {
         if (!inDungeon) {
             if (wasInDungeon || state.hasData()) {
                 state.clear();
+                markerIndexNameCache.clear();
             }
             wasInDungeon = false;
             return;
@@ -539,6 +549,7 @@ public class DungeonMap extends Module {
         List<DungeonMapState.PlayerMarker> markers = state.getMarkers();
         List<? extends PlayerEntity> players = mc.world.getPlayers();
         int dotColor = teammateColor.getRGB();
+        Map<String, PlayerListEntry> playerEntryLookup = buildPlayerEntryLookup();
 
         Set<Integer> usedMarkerIndices = new HashSet<>();
         List<DungeonMapState.PlayerMarker> validMarkers = new ArrayList<>(markers.size());
@@ -547,6 +558,12 @@ public class DungeonMap extends Module {
                 continue;
             }
             validMarkers.add(marker);
+        }
+
+        markerIndexNameCache.keySet().removeIf(index -> index < 0 || index >= validMarkers.size());
+        if (validMarkers.isEmpty()) {
+            markerIndexNameCache.clear();
+            return;
         }
 
         for (PlayerEntity player : players) {
@@ -589,6 +606,12 @@ public class DungeonMap extends Module {
 
             if (bestIndex >= 0) {
                 usedMarkerIndices.add(bestIndex);
+                if (player.getName() != null) {
+                    String normalizedPlayerName = sanitizeMarkerLabel(player.getName().getString());
+                    if (!normalizedPlayerName.isBlank()) {
+                        markerIndexNameCache.put(bestIndex, normalizedPlayerName);
+                    }
+                }
             }
 
             if (bestMarker != null) {
@@ -622,15 +645,128 @@ public class DungeonMap extends Module {
             int py = mapY + MathHelper.floor((float) nz * mapHeight);
 
             String label = sanitizeMarkerLabel(marker.label());
-            if (mc.player != null && !label.isBlank() && label.equalsIgnoreCase(mc.player.getName().getString())) {
+            String resolvedName = label;
+            if (resolvedName.isBlank()) {
+                resolvedName = markerIndexNameCache.getOrDefault(i, "");
+            }
+
+            if (mc.player != null && !resolvedName.isBlank() && resolvedName.equalsIgnoreCase(mc.player.getName().getString())) {
                 continue;
             }
 
+            PlayerListEntry matchedEntry = lookupEntryByName(playerEntryLookup, resolvedName);
+            if (matchedEntry != null && matchedEntry.getProfile() != null) {
+                String entryName = matchedEntry.getProfile().name();
+                if (entryName != null && !entryName.isBlank()) {
+                    if (mc.player != null && entryName.equalsIgnoreCase(mc.player.getName().getString())) {
+                        continue;
+                    }
+                    markerIndexNameCache.put(i, entryName);
+                    drawMarkerHeadOrDot(event, matchedEntry, marker.rotation(), px, py, dotColor, 0xFF202020);
+                    if (showTeammateNames.isToggled()) {
+                        drawTeammateName(event, entryName, px, getTeammateNameY(py));
+                    }
+                    continue;
+                }
+            }
+
             drawFallbackMarker(event, px, py, dotColor, 0xFF202020);
-            if (showTeammateNames.isToggled() && !label.isBlank()) {
-                drawTeammateName(event, label, px, getTeammateNameY(py));
+            if (showTeammateNames.isToggled() && !resolvedName.isBlank()) {
+                drawTeammateName(event, resolvedName, px, getTeammateNameY(py));
             }
         }
+    }
+
+    private Map<String, PlayerListEntry> buildPlayerEntryLookup() {
+        Map<String, PlayerListEntry> out = new HashMap<>();
+        if (mc == null || mc.getNetworkHandler() == null) {
+            return out;
+        }
+
+        for (PlayerListEntry entry : mc.getNetworkHandler().getPlayerList()) {
+            if (entry == null || entry.getProfile() == null) {
+                continue;
+            }
+            String profileName = entry.getProfile().name();
+            if (profileName == null || profileName.isBlank()) {
+                continue;
+            }
+
+            String normalized = sanitizeMarkerLabel(profileName);
+            if (normalized.isBlank()) {
+                continue;
+            }
+
+            out.putIfAbsent(normalized.toLowerCase(), entry);
+        }
+
+        return out;
+    }
+
+    private PlayerListEntry lookupEntryByName(Map<String, PlayerListEntry> lookup, String name) {
+        if (name == null || name.isBlank() || lookup.isEmpty()) {
+            return null;
+        }
+
+        String key = sanitizeMarkerLabel(name).toLowerCase();
+        if (key.isBlank()) {
+            return null;
+        }
+
+        return lookup.get(key);
+    }
+
+    private void drawMarkerHeadOrDot(Render2DEvent event, PlayerListEntry entry, int markerRotation, int px, int py, int color, int bg) {
+        int half = 2 + (int) Math.round(playerHeadBackgroundSize.getInput());
+        if (half > 2) {
+            event.drawContext.fill(px - half, py - half, px + half, py + half, bg);
+        }
+
+        boolean drewHead = false;
+        try {
+            if (entry != null) {
+                SkinTextures textures = entry.getSkinTextures();
+                if (textures != null) {
+                    int headSize = Math.max(6, (int) Math.round(8 * mapScale.getInput()));
+                    float yawDegrees = markerRotationToYaw(markerRotation);
+                    float rotationRad = (float) Math.toRadians(yawDegrees + 180.0f);
+
+                    event.drawContext.getMatrices().pushMatrix();
+                    try {
+                        event.drawContext.getMatrices().translate(px, py);
+                        event.drawContext.getMatrices().rotate(rotationRad);
+                        event.drawContext.getMatrices().translate(-headSize / 2.0f, -headSize / 2.0f);
+                        PlayerSkinDrawer.draw(event.drawContext, textures, 0, 0, headSize, -1);
+                    } finally {
+                        event.drawContext.getMatrices().popMatrix();
+                    }
+                    drewHead = true;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+
+        if (drewHead) {
+            return;
+        }
+
+        drawFallbackMarker(event, px, py, color, bg);
+    }
+
+    private float markerRotationToYaw(int markerRotation) {
+        int rot = markerRotation;
+        if (rot < 0) {
+            rot += 256;
+        }
+
+        // Typical map marker rotation uses 0-15, which maps directly to yaw degrees.
+        if (rot <= 15) {
+            return rot * 22.5f;
+        }
+
+        // Some mappings expose full-byte angle encoding.
+        rot &= 255;
+        return rot * (360.0f / 256.0f);
     }
 
     private void drawMarkerHeadOrDot(Render2DEvent event, PlayerEntity player, int px, int py, int color, int bg) {
@@ -700,7 +836,25 @@ public class DungeonMap extends Module {
             return "";
         }
         String[] tokens = cleaned.split("\\s+");
-        return tokens.length == 0 ? "" : tokens[0];
+        if (tokens.length == 0) {
+            return "";
+        }
+
+        for (int i = tokens.length - 1; i >= 0; i--) {
+            String token = tokens[i];
+            if (token == null || token.isBlank()) {
+                continue;
+            }
+            if (token.length() < 3 || token.length() > 16) {
+                continue;
+            }
+            if (RANK_TOKENS.contains(token.toUpperCase())) {
+                continue;
+            }
+            return token;
+        }
+
+        return tokens[tokens.length - 1];
     }
 
     private boolean isRenderablePlayer(PlayerEntity player) {
@@ -710,6 +864,16 @@ public class DungeonMap extends Module {
         if (player == mc.player) {
             return true;
         }
+
+        // Only consider real tab-list players to avoid skin/name NPC swaps (e.g., dungeon shop NPCs).
+        try {
+            if (mc.getNetworkHandler() == null || mc.getNetworkHandler().getPlayerListEntry(player.getUuid()) == null) {
+                return false;
+            }
+        } catch (Throwable ignored) {
+            return false;
+        }
+
         if (AntiBot.isBot(player) || isNpcLike(player)) {
             return false;
         }
