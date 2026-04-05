@@ -19,15 +19,19 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 
 import java.awt.Color;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class ThreeWeirdosSolver extends Module {
-	private static final Pattern NPC_CHAT_REGEX = Pattern.compile("^\\[NPC] (\\w+): (.*)$");
-	private static final Pattern NPC_NAME_REGEX = Pattern.compile("^\\[NPC] (\\w+)$");
+	private static final Pattern NPC_CHAT_REGEX = Pattern.compile("^\\[NPC] ([^:]+):\\s*(.*)$");
 	private static final Pattern COMPLETED_REGEX = Pattern.compile("^PUZZLE SOLVED! \\w+ wasn't fooled by \\w+! Good job!$");
 	private static final Pattern FAILED_REGEX = Pattern.compile("^PUZZLE FAIL! \\w+ was fooled by \\w+! Yikes!$");
 
@@ -59,14 +63,14 @@ public class ThreeWeirdosSolver extends Module {
 		{1, 0}, {-1, 0}, {0, 1}, {0, -1}
 	};
 
-	private static final int CHEST_Y = 69;
 	private static final Color CORRECT_OUTLINE_COLOR = new Color(0, 255, 0, 255);
-	private static final Color CORRECT_FILLED_COLOR = new Color(0, 255, 0, 80);
+	private static final Color CORRECT_FILLED_COLOR = new Color(0, 255, 0, 130);
 	private static final Color WRONG_OUTLINE_COLOR = new Color(255, 0, 0, 255);
 	private static final Color WRONG_FILLED_COLOR = new Color(255, 0, 0, 80);
 
 	private final Map<String, Integer> entityList = new ConcurrentHashMap<>();
 	private final Map<String, AnswerData> answers = new ConcurrentHashMap<>();
+	private final Map<String, Boolean> pendingAnswers = new ConcurrentHashMap<>();
 
 	private long enteredAtMs = -1L;
 	private int worldIdentity = Integer.MIN_VALUE;
@@ -116,6 +120,7 @@ public class ThreeWeirdosSolver extends Module {
 		}
 
 		rebuildEntityMap();
+		resolvePendingAnswers();
 		refreshAnswerEntityPositions();
 
 		if (enteredAtMs < 0L && !entityList.isEmpty()) {
@@ -157,7 +162,12 @@ public class ThreeWeirdosSolver extends Module {
 			return;
 		}
 
-		String name = npcMatch.group(1);
+		String name = npcMatch.group(1).trim();
+		String normalizedName = normalizeNpcName(name);
+		if (normalizedName == null) {
+			return;
+		}
+
 		String message = npcMatch.group(2);
 
 		if (enteredAtMs < 0L) {
@@ -176,9 +186,12 @@ public class ThreeWeirdosSolver extends Module {
 			replayColoredNpcMessage(name, message);
 		}
 
-		AnswerData data = createChest(name, isSolution);
+		pendingAnswers.put(normalizedName, isSolution);
+
+		AnswerData data = createChest(normalizedName, isSolution);
 		if (data != null) {
-			answers.put(name, data);
+			answers.put(normalizedName, data);
+			pendingAnswers.remove(normalizedName);
 		}
 	}
 
@@ -189,8 +202,13 @@ public class ThreeWeirdosSolver extends Module {
 		}
 
 		MatrixStack stack = event.getMatrix();
+		List<AnswerData> renderAnswers = buildRenderAnswers();
 
-		for (AnswerData answer : answers.values()) {
+		if (renderAnswers.isEmpty()) {
+			return;
+		}
+
+		for (AnswerData answer : renderAnswers) {
 			Color outline = answer.isCorrect ? CORRECT_OUTLINE_COLOR : WRONG_OUTLINE_COLOR;
 			Color fill = answer.isCorrect ? CORRECT_FILLED_COLOR : WRONG_FILLED_COLOR;
 
@@ -211,6 +229,62 @@ public class ThreeWeirdosSolver extends Module {
 		}
 	}
 
+	private List<AnswerData> buildRenderAnswers() {
+		List<AnswerData> renderAnswers = new ArrayList<>(answers.values());
+		boolean hasCorrect = false;
+
+		Set<BlockPos> wrongChests = new HashSet<>();
+		for (AnswerData answer : renderAnswers) {
+			if (answer.isCorrect) {
+				hasCorrect = true;
+			} else {
+				wrongChests.add(answer.chestPos);
+			}
+		}
+
+		if (hasCorrect) {
+			return renderAnswers;
+		}
+
+		Map<BlockPos, Vec3d> allChestCandidates = collectPuzzleChestCandidates();
+		List<Map.Entry<BlockPos, Vec3d>> unknownCandidates = new ArrayList<>();
+		for (Map.Entry<BlockPos, Vec3d> candidate : allChestCandidates.entrySet()) {
+			if (!wrongChests.contains(candidate.getKey())) {
+				unknownCandidates.add(candidate);
+			}
+		}
+
+		if (unknownCandidates.size() == 1) {
+			Map.Entry<BlockPos, Vec3d> only = unknownCandidates.get(0);
+			renderAnswers.add(new AnswerData(only.getValue(), only.getKey(), true));
+		}
+
+		return renderAnswers;
+	}
+
+	private Map<BlockPos, Vec3d> collectPuzzleChestCandidates() {
+		Map<BlockPos, Vec3d> candidates = new HashMap<>();
+		if (mc.world == null) {
+			return candidates;
+		}
+
+		for (Integer entityId : entityList.values()) {
+			Entity entity = mc.world.getEntityById(entityId);
+			if (entity == null) {
+				continue;
+			}
+
+			BlockPos chestPos = findClosestChest(entity.getBlockPos(), 4, 6);
+			if (chestPos == null) {
+				continue;
+			}
+
+			candidates.putIfAbsent(chestPos, new Vec3d(entity.getX(), entity.getY(), entity.getZ()));
+		}
+
+		return candidates;
+	}
+
 	private void rebuildEntityMap() {
 		entityList.clear();
 
@@ -228,9 +302,9 @@ public class ThreeWeirdosSolver extends Module {
 				continue;
 			}
 
-			Matcher matcher = NPC_NAME_REGEX.matcher(name);
-			if (matcher.matches()) {
-				entityList.put(matcher.group(1), stand.getId());
+			String normalized = normalizeNpcName(name);
+			if (normalized != null) {
+				entityList.put(normalized, stand.getId());
 			}
 		}
 	}
@@ -245,6 +319,20 @@ public class ThreeWeirdosSolver extends Module {
 			AnswerData refreshed = createChest(entry.getKey(), previous.isCorrect);
 			if (refreshed != null) {
 				answers.put(entry.getKey(), refreshed);
+			}
+		}
+	}
+
+	private void resolvePendingAnswers() {
+		if (pendingAnswers.isEmpty()) {
+			return;
+		}
+
+		for (Map.Entry<String, Boolean> entry : pendingAnswers.entrySet()) {
+			AnswerData data = createChest(entry.getKey(), entry.getValue());
+			if (data != null) {
+				answers.put(entry.getKey(), data);
+				pendingAnswers.remove(entry.getKey());
 			}
 		}
 	}
@@ -276,7 +364,7 @@ public class ThreeWeirdosSolver extends Module {
 			return null;
 		}
 
-		Integer entityId = entityList.get(name);
+		Integer entityId = findEntityId(name);
 		if (entityId == null) {
 			return null;
 		}
@@ -287,19 +375,8 @@ public class ThreeWeirdosSolver extends Module {
 		}
 
 		Vec3d entityPos = new Vec3d(entity.getX(), entity.getY(), entity.getZ());
-		int x0 = (int) Math.round(entityPos.x - 0.5);
-		int z0 = (int) Math.round(entityPos.z - 0.5);
-
-		BlockPos chestPos = null;
-		for (int[] dir : DIRS) {
-			int chestX = x0 + dir[0];
-			int chestZ = z0 + dir[1];
-			BlockPos pos = new BlockPos(chestX, CHEST_Y, chestZ);
-			if (mc.world.getBlockState(pos).getBlock() == Blocks.CHEST) {
-				chestPos = pos;
-				break;
-			}
-		}
+		BlockPos basePos = entity.getBlockPos();
+		BlockPos chestPos = findClosestChest(basePos, 4, 6);
 
 		if (chestPos == null) {
 			return null;
@@ -308,9 +385,103 @@ public class ThreeWeirdosSolver extends Module {
 		return new AnswerData(entityPos, chestPos, isCorrect);
 	}
 
+	private Integer findEntityId(String normalizedName) {
+		Integer direct = entityList.get(normalizedName);
+		if (direct != null) {
+			return direct;
+		}
+
+		for (Map.Entry<String, Integer> entry : entityList.entrySet()) {
+			String key = entry.getKey();
+			if (key.equals(normalizedName) || key.contains(normalizedName) || normalizedName.contains(key)) {
+				return entry.getValue();
+			}
+		}
+
+		return null;
+	}
+
+	private BlockPos findClosestChest(BlockPos basePos, int horizontalRange, int verticalRange) {
+		if (mc.world == null) {
+			return null;
+		}
+
+		BlockPos best = null;
+		double bestDistance = Double.MAX_VALUE;
+
+		for (int dx = -horizontalRange; dx <= horizontalRange; dx++) {
+			for (int dz = -horizontalRange; dz <= horizontalRange; dz++) {
+				for (int dy = -verticalRange; dy <= verticalRange; dy++) {
+					BlockPos pos = basePos.add(dx, dy, dz);
+					if (mc.world.getBlockState(pos).getBlock() != Blocks.CHEST) {
+						continue;
+					}
+
+					double distance = basePos.getSquaredDistance(pos);
+					if (distance < bestDistance) {
+						bestDistance = distance;
+						best = pos;
+					}
+				}
+			}
+		}
+
+		if (best != null) {
+			return best;
+		}
+
+		int x0 = basePos.getX();
+		int y0 = basePos.getY();
+		int z0 = basePos.getZ();
+
+		for (int[] dir : DIRS) {
+			int chestX = x0 + dir[0];
+			int chestZ = z0 + dir[1];
+			for (int yOffset = -4; yOffset <= 3; yOffset++) {
+				BlockPos pos = new BlockPos(chestX, y0 + yOffset, chestZ);
+				if (mc.world.getBlockState(pos).getBlock() == Blocks.CHEST) {
+					return pos;
+				}
+			}
+		}
+
+		return null;
+	}
+
+	private String normalizeNpcName(String rawName) {
+		if (rawName == null) {
+			return null;
+		}
+
+		String name = Utils.stripColor(rawName).trim();
+		if (name.isEmpty()) {
+			return null;
+		}
+
+		if (name.startsWith("[NPC]")) {
+			name = name.substring(5).trim();
+		}
+
+		int colonIndex = name.indexOf(':');
+		if (colonIndex >= 0) {
+			name = name.substring(0, colonIndex).trim();
+		}
+
+		if (name.endsWith(":")) {
+			name = name.substring(0, name.length() - 1).trim();
+		}
+
+		if (name.isEmpty()) {
+			return null;
+		}
+
+		return name.toLowerCase(Locale.ROOT);
+	}
+
 	private void reset() {
 		enteredAtMs = -1L;
 		answers.clear();
+		pendingAnswers.clear();
 		entityList.clear();
 	}
 }

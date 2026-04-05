@@ -351,28 +351,56 @@ public class RenderUtils {
     }
 
     public static void draw3DText(MatrixStack stack, String text, Vec3d pos, float scale) {
+        draw3DText(stack, text, pos, scale, 0xFFFFFFFF);
+    }
+
+    public static void draw3DText(MatrixStack stack, String text, Vec3d pos, float scale, int color) {
         Camera camera = mc.getEntityRenderDispatcher().camera;
-        if (camera == null) return;
+        if (camera == null || text == null || text.isEmpty()) return;
         
         double x = pos.x - camera.getCameraPos().x;
         double y = pos.y - camera.getCameraPos().y;
         double z = pos.z - camera.getCameraPos().z;
 
         stack.push();
-        stack.translate(x, y, z);
-        stack.multiply(camera.getRotation());
-        stack.scale(-0.025f * scale, -0.025f * scale, 0.025f * scale);
+        beginThroughWallRender();
+        try {
+            stack.translate(x, y, z);
 
-        Matrix4f positionMatrix = stack.peek().getPositionMatrix();
-        TextRenderer textRenderer = mc.textRenderer;
-        
-        float textWidth = (float) (-textRenderer.getWidth(text) / 2);
-        VertexConsumerProvider.Immediate immediate = mc.getBufferBuilders().getEntityVertexConsumers();
-        
-        textRenderer.draw(text, textWidth, 0f, 0xFFFFFFFF, false, positionMatrix, immediate, TextRenderer.TextLayerType.NORMAL, 0x40000000, 0xF000F0);
-        
-        // No immediate.draw() needed as it will be drawn automatically or can be forced, but usually getEntityVertexConsumers works without manual draw here for tags
-        stack.pop();
+            if (mc.player != null) {
+                float yaw = mc.player.getYaw();
+                float pitch = mc.player.getPitch();
+                stack.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-yaw));
+                stack.multiply(RotationAxis.POSITIVE_X.rotationDegrees(pitch));
+            } else {
+                stack.multiply(camera.getRotation());
+            }
+
+            stack.scale(-0.025f * scale, -0.025f * scale, 0.025f * scale);
+
+            Matrix4f positionMatrix = stack.peek().getPositionMatrix();
+            TextRenderer textRenderer = mc.textRenderer;
+
+            float textWidth = (float) (-textRenderer.getWidth(text) / 2);
+            VertexConsumerProvider.Immediate immediate = mc.getBufferBuilders().getEntityVertexConsumers();
+
+            textRenderer.draw(
+                text,
+                textWidth,
+                0f,
+                color,
+                false,
+                positionMatrix,
+                immediate,
+                TextRenderer.TextLayerType.SEE_THROUGH,
+                0,
+                LightmapTextureManager.MAX_LIGHT_COORDINATE
+            );
+            immediate.draw();
+        } finally {
+            endThroughWallRender();
+            stack.pop();
+        }
     }
 
     public static void draw2DLine(DrawContext context, float x1, float y1, float x2, float y2, int color, int thickness) {
