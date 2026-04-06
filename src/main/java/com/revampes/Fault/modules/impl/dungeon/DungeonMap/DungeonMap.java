@@ -33,6 +33,7 @@ public class DungeonMap extends Module {
     private static final Identifier GREEN_CHECK_ICON = Identifier.of("revampes", "dungeonmap/bloom_map_green_check.png");
     private static final Identifier WHITE_CHECK_ICON = Identifier.of("revampes", "dungeonmap/bloom_map_white_check.png");
     private static final Identifier FAILED_ICON = Identifier.of("revampes", "dungeonmap/bloom_map_failed_room.png");
+    private static final Identifier QUESTION_MARK_ICON = Identifier.of("revampes", "dungeonmap/bloom_map_question_mark.png");
 
     private final SliderSetting xPos = new SliderSetting("X Position", "%", 75, 0, 100, 1);
     private final SliderSetting yPos = new SliderSetting("Y Position", "%", 18, 0, 100, 1);
@@ -43,7 +44,9 @@ public class DungeonMap extends Module {
     private final SliderSetting roomTextScale = new SliderSetting("Room Text Scale", 0.60, 0.25, 2.0, 0.05);
     private final SliderSetting teammateNameScale = new SliderSetting("Teammate Name Scale", 0.90, 0.25, 2.0, 0.05);
     private final SliderSetting teammateNameGap = new SliderSetting("Teammate Name Gap", "px", 2, -20, 40, 1);
+    private final SliderSetting playerHeadSize = new SliderSetting("Player Head Size", 1.0, 0.5, 3.0, 0.05);
     private final SliderSetting playerHeadBackgroundSize = new SliderSetting("Player Head BG Size", 1, 0, 10, 1);
+    private final SliderSetting headBorderWidth = new SliderSetting("Head Border Width", "px", 1, 0, 6, 1);
 
     private final ButtonSetting onlyInDungeon = new ButtonSetting("Only in Dungeon", true);
     private final ButtonSetting disableInBoss = new ButtonSetting("Disable in Boss", true);
@@ -51,6 +54,7 @@ public class DungeonMap extends Module {
     private final ButtonSetting showCheckmarks = new ButtonSetting("Show Checkmarks", true);
     private final ButtonSetting showTeammateIcons = new ButtonSetting("Show Teammates", true);
     private final ButtonSetting showTeammateNames = new ButtonSetting("Show Teammate Names", false);
+    private final ButtonSetting headBorder = new ButtonSetting("Head Border", false);
 
     private final ColorSetting backgroundColor = new ColorSetting("Background", new Color(0, 0, 0, 130));
     private final ColorSetting borderColor = new ColorSetting("Border", new Color(30, 30, 30, 200));
@@ -80,12 +84,18 @@ public class DungeonMap extends Module {
     private final ColorSetting teammateColor = new ColorSetting("Teammate Dot", new Color(255, 255, 255, 255));
     private final ColorSetting teammateNameColor = new ColorSetting("Teammate Name", new Color(70, 70, 70, 255));
     private final ColorSetting roomNameColor = new ColorSetting("Room Name", new Color(235, 235, 235, 255));
+    private final ColorSetting selfHeadBorderColor = new ColorSetting("My Head Border", new Color(85, 255, 255, 255));
+    private final ColorSetting teammateHeadBorderColor = new ColorSetting("Teammate Head Border", new Color(255, 255, 255, 255));
 
     private final DungeonMapState state = new DungeonMapState();
     private long lastWorldFallbackTryMs = 0L;
     private boolean wasInDungeon = false;
     private int lastWorldIdentityHash = Integer.MIN_VALUE;
     private final Map<Integer, String> markerIndexNameCache = new HashMap<>();
+    private final Map<String, SmoothedMarkerPoint> markerSmoothingCache = new HashMap<>();
+    private static final float MARKER_SMOOTH_FACTOR = 0.35f;
+    private static final int MARKER_SMOOTH_SNAP_DISTANCE_PX = 28;
+    private static final long MARKER_SMOOTH_STALE_MS = 3500L;
     private static final Set<String> RANK_TOKENS = Set.of(
         "VIP", "MVP", "ADMIN", "MOD", "HELPER", "GM", "YT", "PIG", "NONE"
     );
@@ -112,14 +122,17 @@ public class DungeonMap extends Module {
         this.registerSetting(roomTextScale);
         this.registerSetting(teammateNameScale);
         this.registerSetting(teammateNameGap);
+        this.registerSetting(playerHeadSize);
         this.registerSetting(playerHeadBackgroundSize);
+        this.registerSetting(headBorderWidth);
 
         this.registerSetting(onlyInDungeon);
-    this.registerSetting(disableInBoss);
+        this.registerSetting(disableInBoss);
         this.registerSetting(showRoomNames);
         this.registerSetting(showCheckmarks);
         this.registerSetting(showTeammateIcons);
         this.registerSetting(showTeammateNames);
+        this.registerSetting(headBorder);
 
         this.registerSetting(backgroundColor);
         this.registerSetting(borderColor);
@@ -149,15 +162,24 @@ public class DungeonMap extends Module {
         this.registerSetting(teammateColor);
         this.registerSetting(teammateNameColor);
         this.registerSetting(roomNameColor);
+        this.registerSetting(selfHeadBorderColor);
+        this.registerSetting(teammateHeadBorderColor);
 
+        playerHeadSize.setVisibilityCondition(showTeammateIcons::isToggled);
+        playerHeadBackgroundSize.setVisibilityCondition(showTeammateIcons::isToggled);
+        headBorder.setVisibilityCondition(showTeammateIcons::isToggled);
         showTeammateNames.setVisibilityCondition(showTeammateIcons::isToggled);
         teammateNameGap.setVisibilityCondition(() -> showTeammateIcons.isToggled() && showTeammateNames.isToggled());
+        headBorderWidth.setVisibilityCondition(() -> showTeammateIcons.isToggled() && headBorder.isToggled());
+        selfHeadBorderColor.setVisibilityCondition(() -> showTeammateIcons.isToggled() && headBorder.isToggled());
+        teammateHeadBorderColor.setVisibilityCondition(() -> showTeammateIcons.isToggled() && headBorder.isToggled());
     }
 
     @Override
     public void onDisable() {
         state.clear();
         markerIndexNameCache.clear();
+        markerSmoothingCache.clear();
         wasInDungeon = false;
         lastWorldIdentityHash = Integer.MIN_VALUE;
     }
@@ -197,6 +219,7 @@ public class DungeonMap extends Module {
             if (wasInDungeon || state.hasData()) {
                 state.clear();
                 markerIndexNameCache.clear();
+                markerSmoothingCache.clear();
             }
             wasInDungeon = false;
             lastWorldIdentityHash = Integer.MIN_VALUE;
@@ -208,6 +231,7 @@ public class DungeonMap extends Module {
             if (state.hasData()) {
                 state.clear();
                 markerIndexNameCache.clear();
+                markerSmoothingCache.clear();
             }
             lastWorldFallbackTryMs = 0L;
             wasInDungeon = false;
@@ -219,6 +243,7 @@ public class DungeonMap extends Module {
             if (wasInDungeon || state.hasData()) {
                 state.clear();
                 markerIndexNameCache.clear();
+                markerSmoothingCache.clear();
             }
             wasInDungeon = false;
             return;
@@ -270,7 +295,7 @@ public class DungeonMap extends Module {
                 event.drawContext.fill(x1, y1, x1 + roomPx, y1 + roomPx, roomColor);
 
                 if (showCheckmarks.isToggled()) {
-                    drawRoomCheckmark(event, x1, y1, roomPx, roomCenterCode, room);
+                    drawRoomCheckmark(event, x1, y1, roomPx, roomCenterCode, roomCode, room);
                 }
 
                 if (showRoomNames.isToggled() && room != null && room.name() != null && !room.name().isBlank() && roomCode != 82 && roomCode != 85 && roomCode != 119) {
@@ -485,7 +510,7 @@ public class DungeonMap extends Module {
         return DungeonRoomDatabase.RoomKind.NORMAL;
     }
 
-    private void drawRoomCheckmark(Render2DEvent event, int x1, int y1, int roomPx, int mapCode, DungeonMapState.RoomSnapshot room) {
+    private void drawRoomCheckmark(Render2DEvent event, int x1, int y1, int roomPx, int mapCode, int roomCode, DungeonMapState.RoomSnapshot room) {
         Identifier icon = null;
         if (mapCode == 30) {
             icon = GREEN_CHECK_ICON;
@@ -493,6 +518,8 @@ public class DungeonMap extends Module {
             icon = WHITE_CHECK_ICON;
         } else if (mapCode == 18 && (room == null || room.kind() != DungeonRoomDatabase.RoomKind.BLOOD)) {
             icon = FAILED_ICON;
+        } else if (isUnopenedRoomCode(mapCode) || isUnopenedRoomCode(roomCode)) {
+            icon = QUESTION_MARK_ICON;
         }
 
         if (icon == null) {
@@ -503,6 +530,10 @@ public class DungeonMap extends Module {
         int ix = x1 + (roomPx - size) / 2;
         int iy = y1 + (roomPx - size) / 2;
         event.drawContext.drawTexture(RenderPipelines.GUI_TEXTURED, icon, ix, iy, 0.0f, 0.0f, size, size, size, size);
+    }
+
+    private boolean isUnopenedRoomCode(int mapColorCode) {
+        return mapColorCode == 82 || mapColorCode == 85 || mapColorCode == 119;
     }
 
     private void drawRoomName(Render2DEvent event, String name, int x1, int y1, int roomPx) {
@@ -541,6 +572,8 @@ public class DungeonMap extends Module {
             return;
         }
 
+        cleanupSmoothedMarkerCache(System.currentTimeMillis());
+
         int startX = state.getMapStartX();
         int startZ = state.getMapStartZ();
         int mapPixelW = Math.max(1, state.getMapPixelWidth());
@@ -563,7 +596,6 @@ public class DungeonMap extends Module {
         markerIndexNameCache.keySet().removeIf(index -> index < 0 || index >= validMarkers.size());
         if (validMarkers.isEmpty()) {
             markerIndexNameCache.clear();
-            return;
         }
 
         for (PlayerEntity player : players) {
@@ -571,8 +603,12 @@ public class DungeonMap extends Module {
                 continue;
             }
 
-            double nx = state.worldToMapNormalizedX(player.getX());
-            double nz = state.worldToMapNormalizedZ(player.getZ());
+            double lerpedX = MathHelper.lerp(event.tickDelta, player.lastRenderX, player.getX());
+            double lerpedZ = MathHelper.lerp(event.tickDelta, player.lastRenderZ, player.getZ());
+            double worldNx = state.worldToMapNormalizedX(lerpedX);
+            double worldNz = state.worldToMapNormalizedZ(lerpedZ);
+            double nx = worldNx;
+            double nz = worldNz;
             // Don't discard players just because they're a bit outside the map bounds.
             // We'll clamp them later so they appear at the edge instead of disappearing.
 
@@ -615,18 +651,27 @@ public class DungeonMap extends Module {
             }
 
             if (bestMarker != null) {
-                nx = Math.max(0.0, Math.min(1.0, (bestMarker.mapX() - startX) / (double) mapPixelW));
-                nz = Math.max(0.0, Math.min(1.0, (bestMarker.mapZ() - startZ) / (double) mapPixelH));
-            } else {
-                nx = Math.max(0.0, Math.min(1.0, nx));
-                nz = Math.max(0.0, Math.min(1.0, nz));
+                double markerNx = (bestMarker.mapX() - startX) / (double) mapPixelW;
+                double markerNz = (bestMarker.mapZ() - startZ) / (double) mapPixelH;
+                boolean worldLooksValid = worldNx > -0.20 && worldNx < 1.20 && worldNz > -0.20 && worldNz < 1.20;
+                if (!worldLooksValid) {
+                    nx = markerNx;
+                    nz = markerNz;
+                }
             }
+
+            nx = Math.max(0.0, Math.min(1.0, nx));
+            nz = Math.max(0.0, Math.min(1.0, nz));
 
             int px = mapX + MathHelper.floor((float) nx * mapWidth);
             int py = mapY + MathHelper.floor((float) nz * mapHeight);
+            int[] smoothed = smoothMarkerScreenPosition("entity:" + player.getUuid(), px, py);
+            px = smoothed[0];
+            py = smoothed[1];
+
             int color = player == mc.player ? 0xFF55FFFF : dotColor;
             int bg = player == mc.player ? 0xFF2B4D4D : 0xFF202020;
-            drawMarkerHeadOrDot(event, player, px, py, color, bg);
+            drawMarkerHeadOrDot(event, player, px, py, color, bg, player == mc.player);
 
             if (showTeammateNames.isToggled() && player.getName() != null) {
                 drawTeammateName(event, player.getName().getString(), px, getTeammateNameY(py));
@@ -662,7 +707,12 @@ public class DungeonMap extends Module {
                         continue;
                     }
                     markerIndexNameCache.put(i, entryName);
-                    drawMarkerHeadOrDot(event, matchedEntry, marker.rotation(), px, py, dotColor, 0xFF202020);
+
+                    int[] smoothed = smoothMarkerScreenPosition("entry:" + entryName.toLowerCase(), px, py);
+                    px = smoothed[0];
+                    py = smoothed[1];
+
+                    drawMarkerHeadOrDot(event, matchedEntry, marker.rotation(), px, py, dotColor, 0xFF202020, false);
                     if (showTeammateNames.isToggled()) {
                         drawTeammateName(event, entryName, px, getTeammateNameY(py));
                     }
@@ -670,7 +720,12 @@ public class DungeonMap extends Module {
                 }
             }
 
-            drawFallbackMarker(event, px, py, dotColor, 0xFF202020);
+            String smoothingKey = resolvedName.isBlank() ? ("marker-index:" + i) : ("marker:" + resolvedName.toLowerCase());
+            int[] smoothed = smoothMarkerScreenPosition(smoothingKey, px, py);
+            px = smoothed[0];
+            py = smoothed[1];
+
+            drawFallbackMarker(event, px, py, dotColor, 0xFF202020, false);
             if (showTeammateNames.isToggled() && !resolvedName.isBlank()) {
                 drawTeammateName(event, resolvedName, px, getTeammateNameY(py));
             }
@@ -716,8 +771,8 @@ public class DungeonMap extends Module {
         return lookup.get(key);
     }
 
-    private void drawMarkerHeadOrDot(Render2DEvent event, PlayerListEntry entry, int markerRotation, int px, int py, int color, int bg) {
-        int half = 2 + (int) Math.round(playerHeadBackgroundSize.getInput());
+    private void drawMarkerHeadOrDot(Render2DEvent event, PlayerListEntry entry, int markerRotation, int px, int py, int color, int bg, boolean isSelf) {
+        int half = getHeadBackgroundHalfSize();
         if (half > 2) {
             event.drawContext.fill(px - half, py - half, px + half, py + half, bg);
         }
@@ -727,7 +782,7 @@ public class DungeonMap extends Module {
             if (entry != null) {
                 SkinTextures textures = entry.getSkinTextures();
                 if (textures != null) {
-                    int headSize = Math.max(6, (int) Math.round(8 * mapScale.getInput()));
+                    int headSize = getConfiguredHeadSize();
                     float yawDegrees = markerRotationToYaw(markerRotation);
                     float rotationRad = (float) Math.toRadians(yawDegrees + 180.0f);
 
@@ -741,6 +796,7 @@ public class DungeonMap extends Module {
                         event.drawContext.getMatrices().popMatrix();
                     }
                     drewHead = true;
+                    drawHeadBorder(event, px, py, headSize, isSelf);
                 }
             }
         } catch (Throwable ignored) {
@@ -750,7 +806,7 @@ public class DungeonMap extends Module {
             return;
         }
 
-        drawFallbackMarker(event, px, py, color, bg);
+        drawFallbackMarker(event, px, py, color, bg, isSelf);
     }
 
     private float markerRotationToYaw(int markerRotation) {
@@ -769,8 +825,8 @@ public class DungeonMap extends Module {
         return rot * (360.0f / 256.0f);
     }
 
-    private void drawMarkerHeadOrDot(Render2DEvent event, PlayerEntity player, int px, int py, int color, int bg) {
-        int half = 2 + (int) Math.round(playerHeadBackgroundSize.getInput());
+    private void drawMarkerHeadOrDot(Render2DEvent event, PlayerEntity player, int px, int py, int color, int bg, boolean isSelf) {
+        int half = getHeadBackgroundHalfSize();
         if (half > 2) {
             event.drawContext.fill(px - half, py - half, px + half, py + half, bg);
         }
@@ -782,7 +838,7 @@ public class DungeonMap extends Module {
                 if (entry != null) {
                     SkinTextures textures = entry.getSkinTextures();
                     if (textures != null) {
-                        int headSize = Math.max(6, (int) Math.round(8 * mapScale.getInput()));
+                        int headSize = getConfiguredHeadSize();
                         float rotationRad = (float) Math.toRadians(player.getYaw() + 180.0f);
 
                         event.drawContext.getMatrices().pushMatrix();
@@ -795,6 +851,7 @@ public class DungeonMap extends Module {
                             event.drawContext.getMatrices().popMatrix();
                         }
                         drewHead = true;
+                        drawHeadBorder(event, px, py, headSize, isSelf);
                     }
                 }
             }
@@ -805,12 +862,13 @@ public class DungeonMap extends Module {
             return;
         }
 
-        drawFallbackMarker(event, px, py, color, bg);
+        drawFallbackMarker(event, px, py, color, bg, isSelf);
         try {
             float yaw = player.getYaw();
             double rad = Math.toRadians(yaw);
-            int offX = MathHelper.floor(-Math.sin(rad) * 4.0);
-            int offY = MathHelper.floor(Math.cos(rad) * 4.0);
+            int directionOffset = Math.max(4, getConfiguredHeadSize() / 2);
+            int offX = MathHelper.floor(-Math.sin(rad) * directionOffset);
+            int offY = MathHelper.floor(Math.cos(rad) * directionOffset);
             int dirX = px + offX;
             int dirY = py + offY;
             event.drawContext.fill(dirX - 1, dirY - 1, dirX + 1, dirY + 1, color);
@@ -818,12 +876,71 @@ public class DungeonMap extends Module {
         }
     }
 
-    private void drawFallbackMarker(Render2DEvent event, int px, int py, int color, int bg) {
-        int half = 2 + (int) Math.round(playerHeadBackgroundSize.getInput());
+    private void drawFallbackMarker(Render2DEvent event, int px, int py, int color, int bg, boolean isSelf) {
+        int half = getHeadBackgroundHalfSize();
         if (half > 2) {
             event.drawContext.fill(px - half, py - half, px + half, py + half, bg);
         }
-        event.drawContext.fill(px - 2, py - 2, px + 2, py + 2, color);
+
+        int dotHalf = Math.max(2, getConfiguredHeadSize() / 4);
+        event.drawContext.fill(px - dotHalf, py - dotHalf, px + dotHalf, py + dotHalf, color);
+        drawHeadBorder(event, px, py, dotHalf * 2, isSelf);
+    }
+
+    private int getConfiguredHeadSize() {
+        return Math.max(4, (int) Math.round(8 * mapScale.getInput() * playerHeadSize.getInput()));
+    }
+
+    private int getHeadBackgroundHalfSize() {
+        return 2 + (int) Math.round(playerHeadBackgroundSize.getInput());
+    }
+
+    private void drawHeadBorder(Render2DEvent event, int centerX, int centerY, int markerSize, boolean isSelf) {
+        if (!headBorder.isToggled()) {
+            return;
+        }
+
+        int width = Math.max(0, (int) Math.round(headBorderWidth.getInput()));
+        if (width <= 0) {
+            return;
+        }
+
+        int color = isSelf ? selfHeadBorderColor.getRGB() : teammateHeadBorderColor.getRGB();
+        int half = markerSize / 2;
+        int x1 = centerX - half;
+        int y1 = centerY - half;
+        int x2 = x1 + markerSize;
+        int y2 = y1 + markerSize;
+
+        event.drawContext.fill(x1 - width, y1 - width, x2 + width, y1, color);
+        event.drawContext.fill(x1 - width, y2, x2 + width, y2 + width, color);
+        event.drawContext.fill(x1 - width, y1, x1, y2, color);
+        event.drawContext.fill(x2, y1, x2 + width, y2, color);
+    }
+
+    private int[] smoothMarkerScreenPosition(String key, int targetX, int targetY) {
+        long now = System.currentTimeMillis();
+        SmoothedMarkerPoint point = markerSmoothingCache.get(key);
+        if (point == null || now - point.lastUpdateMs > MARKER_SMOOTH_STALE_MS) {
+            markerSmoothingCache.put(key, new SmoothedMarkerPoint(targetX, targetY, now));
+            return new int[] { targetX, targetY };
+        }
+
+        float distance = Math.abs(point.x - targetX) + Math.abs(point.y - targetY);
+        if (distance > MARKER_SMOOTH_SNAP_DISTANCE_PX) {
+            point.x = targetX;
+            point.y = targetY;
+        } else {
+            point.x += (targetX - point.x) * MARKER_SMOOTH_FACTOR;
+            point.y += (targetY - point.y) * MARKER_SMOOTH_FACTOR;
+        }
+        point.lastUpdateMs = now;
+
+        return new int[] { MathHelper.floor(point.x), MathHelper.floor(point.y) };
+    }
+
+    private void cleanupSmoothedMarkerCache(long now) {
+        markerSmoothingCache.values().removeIf(point -> now - point.lastUpdateMs > MARKER_SMOOTH_STALE_MS);
     }
 
     private String sanitizeMarkerLabel(String raw) {
@@ -944,7 +1061,7 @@ public class DungeonMap extends Module {
     }
 
     private int getTeammateNameY(int markerY) {
-        int headSize = Math.max(6, (int) Math.round(8 * mapScale.getInput()));
+        int headSize = getConfiguredHeadSize();
         int gap = (int) Math.round(teammateNameGap.getInput());
         return markerY + (headSize / 2) + gap;
     }
@@ -958,6 +1075,18 @@ public class DungeonMap extends Module {
         event.drawContext.getMatrices().scale((float) teammateNameScale.getInput(), (float) teammateNameScale.getInput());
         event.drawContext.drawText(mc.textRenderer, text, 0, 0, teammateNameColor.getRGB(), true);
         event.drawContext.getMatrices().popMatrix();
+    }
+
+    private static final class SmoothedMarkerPoint {
+        private float x;
+        private float y;
+        private long lastUpdateMs;
+
+        private SmoothedMarkerPoint(float x, float y, long lastUpdateMs) {
+            this.x = x;
+            this.y = y;
+            this.lastUpdateMs = lastUpdateMs;
+        }
     }
 
 }
