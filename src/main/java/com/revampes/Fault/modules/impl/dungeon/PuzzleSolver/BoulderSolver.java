@@ -42,6 +42,8 @@ public class BoulderSolver extends Module {
 	private static final int CHEST_Y = 66;
 
 	private static final int[] SEARCH_DELTAS = new int[] {-ROOM_SIZE * 2, -ROOM_SIZE, 0, ROOM_SIZE, ROOM_SIZE * 2};
+	private static final int[] GRID_SAMPLE_OFFSETS = new int[] {-1, 0, 1};
+	private static final int MAX_GRID_MISMATCH = 3;
 
 	private static final Color OUTLINE_COLOR = new Color(0, 255, 255, 255);
 	private static final Color FILLED_COLOR = new Color(0, 255, 255, 80);
@@ -73,14 +75,26 @@ public class BoulderSolver extends Module {
 		private final int cornerZ;
 		private final int rotation;
 		private final String grid;
+		private final int mismatch;
 		private final double playerDistanceSq;
 
-		private RoomMatch(int cornerX, int cornerZ, int rotation, String grid, double playerDistanceSq) {
+		private RoomMatch(int cornerX, int cornerZ, int rotation, String grid, int mismatch, double playerDistanceSq) {
 			this.cornerX = cornerX;
 			this.cornerZ = cornerZ;
 			this.rotation = rotation;
 			this.grid = grid;
+			this.mismatch = mismatch;
 			this.playerDistanceSq = playerDistanceSq;
+		}
+	}
+
+	private static final class GridMatch {
+		private final String gridKey;
+		private final int mismatch;
+
+		private GridMatch(String gridKey, int mismatch) {
+			this.gridKey = gridKey;
+			this.mismatch = mismatch;
 		}
 	}
 
@@ -232,12 +246,12 @@ public class BoulderSolver extends Module {
 			return null;
 		}
 
-		String grid = getGridLayout(roomCornerX, roomCornerZ, roomRotation);
-		if (!solutions.containsKey(grid)) {
+		GridMatch gridMatch = findGridMatch(roomCornerX, roomCornerZ, roomRotation);
+		if (gridMatch == null) {
 			return null;
 		}
 
-		return new RoomMatch(roomCornerX, roomCornerZ, roomRotation, grid, playerDistanceSqToRoomCenter(roomCornerX, roomCornerZ));
+		return new RoomMatch(roomCornerX, roomCornerZ, roomRotation, gridMatch.gridKey, gridMatch.mismatch, playerDistanceSqToRoomCenter(roomCornerX, roomCornerZ));
 	}
 
 	private RoomMatch findBoulderRoom() {
@@ -256,15 +270,17 @@ public class BoulderSolver extends Module {
 				int candidateCornerZ = baseCornerZ + dz;
 
 				for (int rotation = 0; rotation < 4; rotation++) {
-					String grid = getGridLayout(candidateCornerX, candidateCornerZ, rotation);
-					if (!solutions.containsKey(grid)) {
+					GridMatch gridMatch = findGridMatch(candidateCornerX, candidateCornerZ, rotation);
+					if (gridMatch == null) {
 						continue;
 					}
 
 					double distanceSq = playerDistanceSqToRoomCenter(candidateCornerX, candidateCornerZ);
-					RoomMatch candidate = new RoomMatch(candidateCornerX, candidateCornerZ, rotation, grid, distanceSq);
+					RoomMatch candidate = new RoomMatch(candidateCornerX, candidateCornerZ, rotation, gridMatch.gridKey, gridMatch.mismatch, distanceSq);
 
-					if (best == null || candidate.playerDistanceSq < best.playerDistanceSq) {
+					if (best == null
+						|| candidate.mismatch < best.mismatch
+						|| (candidate.mismatch == best.mismatch && candidate.playerDistanceSq < best.playerDistanceSq)) {
 						best = candidate;
 					}
 				}
@@ -298,15 +314,17 @@ public class BoulderSolver extends Module {
 					continue;
 				}
 
-				String grid = getGridLayout(cornerX, cornerZ, rotation);
-				if (!solutions.containsKey(grid)) {
+				GridMatch gridMatch = findGridMatch(cornerX, cornerZ, rotation);
+				if (gridMatch == null) {
 					continue;
 				}
 
 				double distanceSq = playerDistanceSqToRoomCenter(cornerX, cornerZ);
-				RoomMatch candidate = new RoomMatch(cornerX, cornerZ, rotation, grid, distanceSq);
+				RoomMatch candidate = new RoomMatch(cornerX, cornerZ, rotation, gridMatch.gridKey, gridMatch.mismatch, distanceSq);
 
-				if (best == null || candidate.playerDistanceSq < best.playerDistanceSq) {
+				if (best == null
+					|| candidate.mismatch < best.mismatch
+					|| (candidate.mismatch == best.mismatch && candidate.playerDistanceSq < best.playerDistanceSq)) {
 					best = candidate;
 				}
 			}
@@ -407,7 +425,38 @@ public class BoulderSolver extends Module {
 		return new CopyOnWriteArrayList<>(worldPositions);
 	}
 
+	private GridMatch findGridMatch(int cornerX, int cornerZ, int rotation) {
+		GridMatch best = null;
+
+		for (int offsetX : GRID_SAMPLE_OFFSETS) {
+			for (int offsetZ : GRID_SAMPLE_OFFSETS) {
+				String layout = getGridLayout(cornerX, cornerZ, rotation, GRID_ORIGIN_X + offsetX, GRID_ORIGIN_Z + offsetZ);
+				if (solutions.containsKey(layout)) {
+					return new GridMatch(layout, 0);
+				}
+
+				for (String known : solutions.keySet()) {
+					int cutoff = best == null ? MAX_GRID_MISMATCH : Math.min(MAX_GRID_MISMATCH, best.mismatch);
+					int mismatch = hammingDistance(layout, known, cutoff);
+					if (mismatch > MAX_GRID_MISMATCH) {
+						continue;
+					}
+
+					if (best == null || mismatch < best.mismatch) {
+						best = new GridMatch(known, mismatch);
+					}
+				}
+			}
+		}
+
+		return best;
+	}
+
 	private String getGridLayout(int cornerX, int cornerZ, int rotation) {
+		return getGridLayout(cornerX, cornerZ, rotation, GRID_ORIGIN_X, GRID_ORIGIN_Z);
+	}
+
+	private String getGridLayout(int cornerX, int cornerZ, int rotation, int originX, int originZ) {
 		if (mc.world == null) {
 			return "";
 		}
@@ -416,13 +465,33 @@ public class BoulderSolver extends Module {
 
 		for (int z = 0; z < 16; z += 3) {
 			for (int x = 0; x < 19; x += 3) {
-				BlockPos pos = fromComp(cornerX, cornerZ, GRID_ORIGIN_X - x, GRID_ORIGIN_Z - z, GRID_ORIGIN_Y, rotation);
+				BlockPos pos = fromComp(cornerX, cornerZ, originX - x, originZ - z, GRID_ORIGIN_Y, rotation);
 				BlockState blockState = mc.world.getBlockState(pos);
 				layout.append(blockState.isAir() ? '0' : '1');
 			}
 		}
 
 		return layout.toString();
+	}
+
+	private int hammingDistance(String lhs, String rhs, int cutoff) {
+		if (lhs.length() != rhs.length()) {
+			return Integer.MAX_VALUE;
+		}
+
+		int mismatch = 0;
+		for (int i = 0; i < lhs.length(); i++) {
+			if (lhs.charAt(i) == rhs.charAt(i)) {
+				continue;
+			}
+
+			mismatch++;
+			if (mismatch > cutoff) {
+				return mismatch;
+			}
+		}
+
+		return mismatch;
 	}
 
 	private int toRoomCorner(int coord) {

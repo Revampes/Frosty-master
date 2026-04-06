@@ -25,32 +25,53 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class TriviaSolver extends Module {
-	private static final Pattern ANSWER_LINE_REGEX = Pattern.compile("^\\s*([ⓐⓑⓒ])\\s+(.*)$");
+	private static final Pattern ANSWER_LINE_REGEX = Pattern.compile("^\\s*([ⓐⓑⓒⒶⒷⒸABC])\\s+(.*)$");
 	private static final Pattern QUESTION_REGEX = Pattern.compile("^\\s*(.*\\?)$");
 	private static final Pattern INTRO_REGEX = Pattern.compile("^\\[STATUE] Oruo the Omniscient: I am Oruo the Omniscient\\. I have lived many lives\\. I have learned all there is to know\\.$");
 	private static final Pattern QUESTION_SOLVED_REGEX = Pattern.compile("^\\[STATUE] Oruo the Omniscient: \\w+ answered Question #\\d+ correctly!$");
 	private static final Pattern FINAL_SOLVED_REGEX = Pattern.compile("^\\[STATUE] Oruo the Omniscient: \\w+ answered the final question correctly!$");
 	private static final Pattern YIKES_REGEX = Pattern.compile("^\\[STATUE] Oruo the Omniscient: Yikes$");
 
+	private static final String STATUE_PREFIX = "[STATUE] Oruo the Omniscient: ";
+
 	private static final int ROOM_SIZE = 32;
 	private static final int ROOM_WORLD_START = -200;
+	private static final int ANSWER_Y = 70;
+	private static final int[] SEARCH_DELTAS = new int[] {-ROOM_SIZE * 2, -ROOM_SIZE, 0, ROOM_SIZE, ROOM_SIZE * 2};
 
 	private static final Color CORRECT_OUTLINE = new Color(0, 255, 0, 255);
 	private static final Color CORRECT_FILL = new Color(0, 255, 0, 80);
 
 	private final Map<String, List<String>> solutions = createSolutions();
 	private final Map<String, int[]> typeBlocks = createTypeBlocks();
+	private final List<String> queuedAnswerLines = new ArrayList<>();
 
 	private boolean inQuiz = false;
 	private List<String> solution = null;
-	private String currentAnswer = null;
+	private String currentAnswerType = null;
 	private long enteredAtTick = -1L;
+	private boolean replayingColoredMessage = false;
 
 	private int worldIdentity = Integer.MIN_VALUE;
 	private int roomCornerX = Integer.MIN_VALUE;
 	private int roomCornerZ = Integer.MIN_VALUE;
 	private int roomRotation = 0;
-	private boolean replayingColoredMessage = false;
+
+	private static final class RoomCandidate {
+		private final int cornerX;
+		private final int cornerZ;
+		private final int rotation;
+		private final int score;
+		private final double distanceSq;
+
+		private RoomCandidate(int cornerX, int cornerZ, int rotation, int score, double distanceSq) {
+			this.cornerX = cornerX;
+			this.cornerZ = cornerZ;
+			this.rotation = rotation;
+			this.score = score;
+			this.distanceSq = distanceSq;
+		}
+	}
 
 	public TriviaSolver() {
 		super("TriviaSolver", category.Dungeon);
@@ -120,7 +141,7 @@ public class TriviaSolver extends Module {
 		}
 
 		if (FINAL_SOLVED_REGEX.matcher(text).matches()) {
-			if (enteredAtTick >= 0L && mc.world != null) {
+			if (enteredAtTick >= 0L) {
 				double seconds = (currentTick() - enteredAtTick) * 0.05;
 				Utils.addChatMessage(String.format("\u00A7bQuiz took\u00A7f: \u00A76%.2fs", seconds));
 			}
@@ -141,19 +162,23 @@ public class TriviaSolver extends Module {
 				return;
 			}
 
-			inQuiz = true;
+			String type = normalizeAnswerType(answerMatch.group(1));
+			if (type == null) {
+				return;
+			}
 
-			String type = answerMatch.group(1);
 			String message = answerMatch.group(2).trim();
 			boolean correct = isCorrectAnswer(message);
-
 			if (correct) {
-				currentAnswer = type;
+				currentAnswerType = type;
 				detectQuizRoomAnchor();
 			}
 
 			event.cancel();
-			replayColoredAnswerLine(type, message, correct);
+			queueColoredAnswerLine(type, message, correct);
+			if ("ⓒ".equals(type)) {
+				flushQueuedAnswerLines();
+			}
 			return;
 		}
 
@@ -163,9 +188,8 @@ public class TriviaSolver extends Module {
 		}
 
 		String question = questionMatch.group(1).trim();
-		String statuePrefix = "[STATUE] Oruo the Omniscient: ";
-		if (question.startsWith(statuePrefix)) {
-			question = question.substring(statuePrefix.length()).trim();
+		if (question.startsWith(STATUE_PREFIX)) {
+			question = question.substring(STATUE_PREFIX.length()).trim();
 		}
 
 		List<String> found = resolveQuestionSolution(question);
@@ -175,8 +199,8 @@ public class TriviaSolver extends Module {
 
 		inQuiz = true;
 		solution = found;
-		currentAnswer = null;
-
+		currentAnswerType = null;
+		queuedAnswerLines.clear();
 		if (roomCornerX == Integer.MIN_VALUE || roomCornerZ == Integer.MIN_VALUE) {
 			detectQuizRoomAnchor();
 		}
@@ -184,7 +208,7 @@ public class TriviaSolver extends Module {
 
 	@EventHandler
 	public void onRender3D(Render3DEvent event) {
-		if (!inQuiz || solution == null || currentAnswer == null || mc.world == null) {
+		if (!inQuiz || solution == null || currentAnswerType == null || mc.world == null) {
 			return;
 		}
 
@@ -194,12 +218,12 @@ public class TriviaSolver extends Module {
 			}
 		}
 
-		int[] compPos = typeBlocks.get(currentAnswer);
+		int[] compPos = typeBlocks.get(currentAnswerType);
 		if (compPos == null) {
 			return;
 		}
 
-		BlockPos worldPos = fromComp(roomCornerX, roomCornerZ, compPos[0], compPos[1], 70, roomRotation);
+		BlockPos worldPos = fromComp(roomCornerX, roomCornerZ, compPos[0], compPos[1], ANSWER_Y, roomRotation);
 		MatrixStack stack = event.getMatrix();
 
 		Box box = new Box(worldPos);
@@ -214,77 +238,70 @@ public class TriviaSolver extends Module {
 
 		int baseCornerX = toRoomCorner((int) Math.floor(mc.player.getX()));
 		int baseCornerZ = toRoomCorner((int) Math.floor(mc.player.getZ()));
-		int[] deltas = new int[] {-ROOM_SIZE, 0, ROOM_SIZE};
 
-		int bestScore = Integer.MIN_VALUE;
-		int bestCornerX = Integer.MIN_VALUE;
-		int bestCornerZ = Integer.MIN_VALUE;
-		int bestRotation = 0;
-		double bestDistance = Double.MAX_VALUE;
-
-		for (int dx : deltas) {
-			for (int dz : deltas) {
+		RoomCandidate best = null;
+		for (int dx : SEARCH_DELTAS) {
+			for (int dz : SEARCH_DELTAS) {
 				int cornerX = baseCornerX + dx;
 				int cornerZ = baseCornerZ + dz;
 
 				for (int rotation = 0; rotation < 4; rotation++) {
-					int score = scoreQuizAnchor(cornerX, cornerZ, rotation);
+					int score = scoreQuizRoom(cornerX, cornerZ, rotation);
 					if (score <= 0) {
 						continue;
 					}
 
-					double centerX = cornerX + 15.5;
-					double centerZ = cornerZ + 15.5;
-					double distance = mc.player.squaredDistanceTo(centerX, mc.player.getY(), centerZ);
-
-					if (score > bestScore || (score == bestScore && distance < bestDistance)) {
-						bestScore = score;
-						bestDistance = distance;
-						bestCornerX = cornerX;
-						bestCornerZ = cornerZ;
-						bestRotation = rotation;
+					double distanceSq = playerDistanceSqToRoomCenter(cornerX, cornerZ);
+					RoomCandidate candidate = new RoomCandidate(cornerX, cornerZ, rotation, score, distanceSq);
+					if (best == null
+						|| candidate.score > best.score
+						|| (candidate.score == best.score && candidate.distanceSq < best.distanceSq)) {
+						best = candidate;
 					}
 				}
 			}
 		}
 
-		if (bestScore <= 0) {
+		if (best == null) {
 			return false;
 		}
 
-		roomCornerX = bestCornerX;
-		roomCornerZ = bestCornerZ;
-		roomRotation = bestRotation;
+		roomCornerX = best.cornerX;
+		roomCornerZ = best.cornerZ;
+		roomRotation = best.rotation;
 		return true;
 	}
 
-	private int scoreQuizAnchor(int cornerX, int cornerZ, int rotation) {
+	private int scoreQuizRoom(int cornerX, int cornerZ, int rotation) {
 		if (mc.world == null) {
 			return Integer.MIN_VALUE;
 		}
 
 		int score = 0;
+
 		for (int[] compPos : typeBlocks.values()) {
-			BlockPos pos = fromComp(cornerX, cornerZ, compPos[0], compPos[1], 70, rotation);
+			BlockPos pos = fromComp(cornerX, cornerZ, compPos[0], compPos[1], ANSWER_Y, rotation);
 			Block block = mc.world.getBlockState(pos).getBlock();
-			if (isSolidBlock(block)) {
+			if (!isAirBlock(block)) {
 				score += 3;
+			} else {
+				score -= 4;
 			}
 
-			Block below = mc.world.getBlockState(pos.down()).getBlock();
-			if (isSolidBlock(below)) {
-				score += 1;
+			Block above = mc.world.getBlockState(pos.up()).getBlock();
+			if (isAirBlock(above)) {
+				score += 2;
+			} else {
+				score -= 2;
 			}
 		}
 
-		if (currentAnswer != null) {
-			int[] answerComp = typeBlocks.get(currentAnswer);
+		if (currentAnswerType != null) {
+			int[] answerComp = typeBlocks.get(currentAnswerType);
 			if (answerComp != null) {
-				BlockPos answerPos = fromComp(cornerX, cornerZ, answerComp[0], answerComp[1], 70, rotation);
-				if (isSolidBlock(mc.world.getBlockState(answerPos).getBlock())) {
+				BlockPos answerPos = fromComp(cornerX, cornerZ, answerComp[0], answerComp[1], ANSWER_Y, rotation);
+				if (!isAirBlock(mc.world.getBlockState(answerPos).getBlock())) {
 					score += 4;
-				} else {
-					score -= 2;
 				}
 			}
 		}
@@ -292,12 +309,35 @@ public class TriviaSolver extends Module {
 		return score;
 	}
 
-	private boolean isSolidBlock(Block block) {
-		return block != Blocks.AIR && block != Blocks.CAVE_AIR && block != Blocks.VOID_AIR;
+	private boolean isAirBlock(Block block) {
+		return block == Blocks.AIR || block == Blocks.CAVE_AIR || block == Blocks.VOID_AIR;
+	}
+
+	private double playerDistanceSqToRoomCenter(int cornerX, int cornerZ) {
+		if (mc.player == null) {
+			return Double.MAX_VALUE;
+		}
+
+		double centerX = cornerX + 15.5;
+		double centerZ = cornerZ + 15.5;
+		return mc.player.squaredDistanceTo(centerX, mc.player.getY(), centerZ);
 	}
 
 	private long currentTick() {
 		return mc.world == null ? 0L : mc.world.getTime();
+	}
+
+	private String normalizeAnswerType(String rawType) {
+		if (rawType == null || rawType.isEmpty()) {
+			return null;
+		}
+
+		return switch (rawType.charAt(0)) {
+			case 'A', 'a', 'Ⓐ', 'ⓐ' -> "ⓐ";
+			case 'B', 'b', 'Ⓑ', 'ⓑ' -> "ⓑ";
+			case 'C', 'c', 'Ⓒ', 'ⓒ' -> "ⓒ";
+			default -> null;
+		};
 	}
 
 	private boolean isCorrectAnswer(String message) {
@@ -331,17 +371,24 @@ public class TriviaSolver extends Module {
 		return answer == null ? null : answer;
 	}
 
-	private void replayColoredAnswerLine(String type, String message, boolean correct) {
-		if (mc.player == null) {
+	private void queueColoredAnswerLine(String type, String message, boolean correct) {
+		String color = correct ? "\u00A7a" : "\u00A7c";
+		queuedAnswerLines.add("    " + color + type + " " + message);
+	}
+
+	private void flushQueuedAnswerLines() {
+		if (mc.player == null || queuedAnswerLines.isEmpty()) {
 			return;
 		}
 
 		replayingColoredMessage = true;
 		try {
-			String color = correct ? "\u00A7a" : "\u00A7c";
-			mc.player.sendMessage(Text.literal("    " + color + type + " " + message), false);
+			for (String line : queuedAnswerLines) {
+				mc.player.sendMessage(Text.literal(line), false);
+			}
 		} finally {
 			replayingColoredMessage = false;
+			queuedAnswerLines.clear();
 		}
 	}
 
@@ -383,7 +430,8 @@ public class TriviaSolver extends Module {
 	private void resetSolution() {
 		enteredAtTick = -1L;
 		solution = null;
-		currentAnswer = null;
+		currentAnswerType = null;
+		queuedAnswerLines.clear();
 	}
 
 	private void resetState() {
@@ -414,7 +462,7 @@ public class TriviaSolver extends Module {
 		addSolution(map, "What is the status of Livid?", "Master Necromancer");
 		addSolution(map, "What is the status of Sadan?", "Necromancer Lord");
 		addSolution(map, "What is the status of Maxor, Storm, Goldor, and Necron?", "The Wither Lords");
-		addSolution(map, "How many total Fairy Souls are there?", "267 Fairy Souls");
+		addSolution(map, "How many total Fairy Souls are there?", "266 Fairy Souls");
 		addSolution(map, "How many Fairy Souls are there in Spider's Den?", "19 Fairy Souls");
 		addSolution(map, "How many Fairy Souls are there in Spiders Den?", "19 Fairy Souls");
 		addSolution(map, "How many Fairy Souls are there in The End?", "12 Fairy Souls");
@@ -434,7 +482,7 @@ public class TriviaSolver extends Module {
 		addSolution(map, "What is the name of the person that upgrades pets?", "Kat");
 		addSolution(map, "What is the name of the lady of the Nether?", "Elle");
 		addSolution(map, "Which villager in the Village gives you a Rogue Sword?", "Jamie");
-		addSolution(map, "How many unique minions are there?", "60 Minions");
+		addSolution(map, "How many unique minions are there?", "59 Minions");
 
 		addSolution(
 			map,

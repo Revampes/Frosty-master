@@ -29,10 +29,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 public class WaterBoardSolver extends Module {
     private static final int TOP_LEFT_X = 16;
@@ -46,6 +44,7 @@ public class WaterBoardSolver extends Module {
 
     private static final int ROOM_SIZE = 32;
     private static final int ROOM_WORLD_START = -200;
+    private static final int[] SEARCH_DELTAS = new int[] {-ROOM_SIZE * 2, -ROOM_SIZE, 0, ROOM_SIZE, ROOM_SIZE * 2};
 
     private static final Color FIRST_COLOR = new Color(0, 255, 0, 255);
     private static final Color SECOND_COLOR = new Color(255, 165, 0, 255);
@@ -74,11 +73,11 @@ public class WaterBoardSolver extends Module {
     private int roomRotation = 0;
     private int roomTopY = 77;
     private int roomYOffset = 0;
+
     private int worldIdentity = Integer.MIN_VALUE;
     private int lastMode = -1;
     private String lastUnknownKey = null;
     private int detectCooldownTicks = 0;
-    private final List<BlockPos> previewLevers = new ArrayList<>();
 
     private final Comparator<LeverTick> solutionSort = Comparator
         .comparingInt((LeverTick pair) -> pair.tick)
@@ -89,8 +88,8 @@ public class WaterBoardSolver extends Module {
         private final int cornerZ;
         private final int rotation;
         private final int yOffset;
-        private final int leverCount;
         private final int topY;
+        private final int leverCount;
         private final Integer variant;
         private final String subvariant;
         private final double playerDistanceSq;
@@ -100,8 +99,8 @@ public class WaterBoardSolver extends Module {
             int cornerZ,
             int rotation,
             int yOffset,
-            int leverCount,
             int topY,
+            int leverCount,
             Integer variant,
             String subvariant,
             double playerDistanceSq
@@ -110,22 +109,22 @@ public class WaterBoardSolver extends Module {
             this.cornerZ = cornerZ;
             this.rotation = rotation;
             this.yOffset = yOffset;
-            this.leverCount = leverCount;
             this.topY = topY;
+            this.leverCount = leverCount;
             this.variant = variant;
             this.subvariant = subvariant;
             this.playerDistanceSq = playerDistanceSq;
         }
 
         private int score() {
-            int score = leverCount * 100;
+            int score = leverCount * 20;
             if (variant != null) {
-                score += 40;
+                score += 80;
             }
             if (subvariant != null && subvariant.length() == 3) {
-                score += 20;
+                score += 40;
             }
-            score -= (int) Math.min(playerDistanceSq, 400.0);
+            score -= (int) Math.min(playerDistanceSq, 500.0);
             return score;
         }
     }
@@ -214,11 +213,20 @@ public class WaterBoardSolver extends Module {
         }
 
         private static Lever from(String type) {
+            if (type == null) {
+                return null;
+            }
+
             for (Lever value : values()) {
-                if (value.type.equals(type)) {
+                if (value.type.equalsIgnoreCase(type)) {
                     return value;
                 }
             }
+
+            if ("terracotta".equalsIgnoreCase(type) || "white_terracotta".equalsIgnoreCase(type)) {
+                return Terracotta;
+            }
+
             return null;
         }
     }
@@ -276,16 +284,14 @@ public class WaterBoardSolver extends Module {
             }
 
             if (!tryDetectWaterBoardRoom()) {
-                previewLevers.clear();
-                previewLevers.addAll(collectNearbyLevers(20, 18));
                 detectCooldownTicks = 4;
             }
             return;
         }
 
-        if (!isLikelyWaterBoard(roomCornerX, roomCornerZ, roomRotation, roomTopY)) {
+        if (!isLikelyWaterBoardRoom()) {
             resetState();
-            tryDetectWaterBoardRoom();
+            detectCooldownTicks = 4;
             return;
         }
 
@@ -298,7 +304,12 @@ public class WaterBoardSolver extends Module {
             if (detectedSubvariant != null && detectedSubvariant.length() == 3) {
                 subvariant = detectedSubvariant;
                 buildSolution();
+                System.out.println("Revampes$WaterBoard[variant=\"" + variant + "\", subvariant=\"" + subvariant + "\"]");
             }
+        }
+
+        if (solution == null && variant != null && subvariant != null && subvariant.length() == 3) {
+            buildSolution();
         }
 
         int currentMode = (int) solutionMode.getValue();
@@ -319,17 +330,7 @@ public class WaterBoardSolver extends Module {
 
     @EventHandler
     public void onRender3D(Render3DEvent event) {
-        if (mc.world == null) {
-            return;
-        }
-
-        if (!inWaterBoard) {
-            renderPreviewLevers(event.getMatrix());
-            return;
-        }
-
-        if (solution == null || solution.isEmpty()) {
-            renderFallbackLevers(event.getMatrix());
+        if (mc.world == null || !inWaterBoard || solution == null || solution.isEmpty()) {
             return;
         }
 
@@ -380,15 +381,17 @@ public class WaterBoardSolver extends Module {
     }
 
     private void handleBlockInteract(BlockPos pos) {
-        if (mc.world == null || mc.player == null || !inWaterBoard) {
+        if (mc.world == null || !inWaterBoard) {
             return;
         }
 
         Block block = mc.world.getBlockState(pos).getBlock();
 
-        BlockPos waterLeverPos = fromComp(roomCornerX, roomCornerZ, Lever.Water.x, Lever.Water.z, toWorldY(Lever.Water.y), roomRotation);
-        if (block == Blocks.LEVER && openedWaterAtTick < 0 && pos.equals(waterLeverPos)) {
-            openedWaterAtTick = mc.world.getTime();
+        if (block == Blocks.LEVER && openedWaterAtTick < 0) {
+            BlockPos waterLeverPos = fromComp(roomCornerX, roomCornerZ, Lever.Water.x, Lever.Water.z, toWorldY(Lever.Water.y), roomRotation);
+            if (pos.equals(waterLeverPos)) {
+                openedWaterAtTick = mc.world.getTime();
+            }
         }
 
         if (block == Blocks.CHEST) {
@@ -419,8 +422,7 @@ public class WaterBoardSolver extends Module {
         }
 
         SolutionEntry entry = solution.get(index);
-        long nowTick = mc.world.getTime();
-        long remaining = openedWaterAtTick < 0 ? entry.time : entry.time - (nowTick - openedWaterAtTick);
+        long remaining = openedWaterAtTick < 0 ? entry.time : entry.time - (mc.world.getTime() - openedWaterAtTick);
 
         if (entry.time <= 0 || remaining < 20) {
             solution.remove(index);
@@ -428,124 +430,25 @@ public class WaterBoardSolver extends Module {
     }
 
     private boolean tryDetectWaterBoardRoom() {
-        if (mc.player == null || mc.world == null) {
+        if (mc.world == null || mc.player == null) {
             return false;
         }
 
         int baseCornerX = toRoomCorner((int) Math.floor(mc.player.getX()));
         int baseCornerZ = toRoomCorner((int) Math.floor(mc.player.getZ()));
-        int[] deltas = new int[] {-ROOM_SIZE * 2, -ROOM_SIZE, 0, ROOM_SIZE, ROOM_SIZE * 2};
-
-        RoomCandidate bestCandidate = null;
-        RoomCandidate bestFallbackCandidate = null;
-
-        for (int dx : deltas) {
-            for (int dz : deltas) {
-                int candidateCornerX = baseCornerX + dx;
-                int candidateCornerZ = baseCornerZ + dz;
-
-                for (int rotation = 0; rotation < 4; rotation++) {
-                    int yOffset = findBestLeverYOffset(candidateCornerX, candidateCornerZ, rotation);
-                    if (yOffset == Integer.MIN_VALUE) {
-                        continue;
-                    }
-
-                    int leverCount = countLeversAtYOffset(candidateCornerX, candidateCornerZ, rotation, yOffset);
-                    if (leverCount < 6) {
-                        continue;
-                    }
-
-                    int topY = detectTopY(candidateCornerX, candidateCornerZ, rotation, yOffset);
-                    if (topY == Integer.MIN_VALUE) {
-                        continue;
-                    }
-
-                    Integer detectedVariant = detectVariant(candidateCornerX, candidateCornerZ, rotation, topY);
-                    String detectedSubvariant = detectedVariant == null
-                        ? null
-                        : detectSubvariant(candidateCornerX, candidateCornerZ, rotation, yOffset);
-                    double playerDistanceSq = playerDistanceSqToRoomCenter(candidateCornerX, candidateCornerZ);
-
-                    RoomCandidate candidate = new RoomCandidate(
-                        candidateCornerX,
-                        candidateCornerZ,
-                        rotation,
-                        yOffset,
-                        leverCount,
-                        topY,
-                        detectedVariant,
-                        detectedSubvariant,
-                        playerDistanceSq
-                    );
-
-                    if (candidate.leverCount >= 7 && hasKnownSolution(candidate.variant, candidate.subvariant)) {
-                        if (bestCandidate == null || candidate.score() > bestCandidate.score()) {
-                            bestCandidate = candidate;
-                        }
-                    } else if (bestFallbackCandidate == null || candidate.score() > bestFallbackCandidate.score()) {
-                        bestFallbackCandidate = candidate;
-                    }
-                }
-            }
-        }
-
-        if (bestCandidate == null) {
-            RoomCandidate anchorCandidate = findRoomCandidateFromLeverAnchors();
-            if (anchorCandidate != null && hasKnownSolution(anchorCandidate.variant, anchorCandidate.subvariant)) {
-                bestCandidate = anchorCandidate;
-            } else if (anchorCandidate != null) {
-                bestFallbackCandidate = anchorCandidate;
-            }
-        }
-
-        if (bestCandidate == null) {
-            bestCandidate = bestFallbackCandidate;
-        }
-
-        if (bestCandidate == null) {
-            return false;
-        }
-
-        inWaterBoard = true;
-        roomCornerX = bestCandidate.cornerX;
-        roomCornerZ = bestCandidate.cornerZ;
-        roomRotation = bestCandidate.rotation;
-        roomTopY = bestCandidate.topY;
-        roomYOffset = bestCandidate.yOffset;
-        variant = bestCandidate.variant;
-        subvariant = bestCandidate.subvariant;
-        solution = null;
-        openedWaterAtTick = -1L;
-
-        if (hasKnownSolution(variant, subvariant)) {
-            buildSolution();
-        }
-
-        previewLevers.clear();
-        detectCooldownTicks = 0;
-
-        return true;
-    }
-
-    private RoomCandidate findRoomCandidateFromLeverAnchors() {
-        if (mc.world == null || mc.player == null) {
-            return null;
-        }
-
-        List<BlockPos> nearbyLevers = collectNearbyLevers(22, 20);
-        if (nearbyLevers.size() < 5) {
-            return null;
-        }
 
         RoomCandidate best = null;
 
-        for (BlockPos leverPos : nearbyLevers) {
-            for (Lever lever : Lever.values()) {
-                int yOffset = leverPos.getY() - lever.y;
+        for (int dx : SEARCH_DELTAS) {
+            for (int dz : SEARCH_DELTAS) {
+                int cornerX = baseCornerX + dx;
+                int cornerZ = baseCornerZ + dz;
 
                 for (int rotation = 0; rotation < 4; rotation++) {
-                    int cornerX = inferCornerX(leverPos.getX(), lever.x, lever.z, rotation);
-                    int cornerZ = inferCornerZ(leverPos.getZ(), lever.x, lever.z, rotation);
+                    int yOffset = findBestLeverYOffset(cornerX, cornerZ, rotation);
+                    if (yOffset == Integer.MIN_VALUE) {
+                        continue;
+                    }
 
                     int leverCount = countLeversAtYOffset(cornerX, cornerZ, rotation, yOffset);
                     if (leverCount < 6) {
@@ -558,107 +461,101 @@ public class WaterBoardSolver extends Module {
                     }
 
                     Integer detectedVariant = detectVariant(cornerX, cornerZ, rotation, topY);
-                    String detectedSubvariant = detectedVariant == null
-                        ? null
-                        : detectSubvariant(cornerX, cornerZ, rotation, yOffset);
-                    double playerDistanceSq = playerDistanceSqToRoomCenter(cornerX, cornerZ);
+                    if (detectedVariant == null) {
+                        continue;
+                    }
+
+                    String detectedSubvariant = detectSubvariant(cornerX, cornerZ, rotation, yOffset);
+                    double distanceSq = playerDistanceSqToRoomCenter(cornerX, cornerZ);
 
                     RoomCandidate candidate = new RoomCandidate(
                         cornerX,
                         cornerZ,
                         rotation,
                         yOffset,
-                        leverCount,
                         topY,
+                        leverCount,
                         detectedVariant,
                         detectedSubvariant,
-                        playerDistanceSq
+                        distanceSq
                     );
 
-                    if (best == null || candidate.score() > best.score()) {
+                    if (best == null
+                        || candidate.score() > best.score()
+                        || (candidate.score() == best.score() && candidate.playerDistanceSq < best.playerDistanceSq)) {
                         best = candidate;
                     }
                 }
             }
         }
 
-        return best;
-    }
-
-    private boolean hasKnownSolution(Integer variantId, String subvariantKey) {
-        if (variantId == null || subvariantKey == null || subvariantKey.length() != 3) {
+        if (best == null) {
             return false;
         }
 
-        Map<String, EnumMap<Lever, List<Integer>>> variants = getCurrentModeSolutions().get(String.valueOf(variantId));
-        return variants != null && variants.get(subvariantKey) != null;
-    }
+        inWaterBoard = true;
+        roomCornerX = best.cornerX;
+        roomCornerZ = best.cornerZ;
+        roomRotation = best.rotation;
+        roomYOffset = best.yOffset;
+        roomTopY = best.topY;
+        variant = best.variant;
+        subvariant = best.subvariant;
+        solution = null;
+        openedWaterAtTick = -1L;
+        lastUnknownKey = null;
 
-    private int inferCornerX(int worldX, int compX, int compZ, int rotation) {
-        return switch (rotation & 3) {
-            case 1 -> worldX - (31 - compZ);
-            case 2 -> worldX - (31 - compX);
-            case 3 -> worldX - compZ;
-            default -> worldX - compX;
-        };
-    }
-
-    private int inferCornerZ(int worldZ, int compX, int compZ, int rotation) {
-        return switch (rotation & 3) {
-            case 1 -> worldZ - compX;
-            case 2 -> worldZ - (31 - compZ);
-            case 3 -> worldZ - (31 - compX);
-            default -> worldZ - compZ;
-        };
-    }
-
-    private List<BlockPos> collectNearbyLevers(int horizontalRange, int verticalRange) {
-        List<BlockPos> levers = new ArrayList<>();
-        if (mc.world == null || mc.player == null) {
-            return levers;
+        if (variant != null && subvariant != null && subvariant.length() == 3) {
+            buildSolution();
         }
 
-        int px = (int) Math.floor(mc.player.getX());
-        int py = (int) Math.floor(mc.player.getY());
-        int pz = (int) Math.floor(mc.player.getZ());
-
-        int minY = py - verticalRange;
-        int maxY = py + verticalRange;
-
-        for (int x = px - horizontalRange; x <= px + horizontalRange; x++) {
-            for (int z = pz - horizontalRange; z <= pz + horizontalRange; z++) {
-                for (int y = minY; y <= maxY; y++) {
-                    BlockPos pos = new BlockPos(x, y, z);
-                    if (mc.world.getBlockState(pos).getBlock() == Blocks.LEVER) {
-                        levers.add(pos);
-                    }
-                }
-            }
-        }
-
-        return levers;
+        detectCooldownTicks = 0;
+        return true;
     }
 
-    private boolean isLikelyWaterBoard(int cornerX, int cornerZ, int rotation, int topY) {
-        if (mc.world == null) {
+    private boolean isLikelyWaterBoardRoom() {
+        if (mc.world == null || roomCornerX == Integer.MIN_VALUE || roomCornerZ == Integer.MIN_VALUE) {
             return false;
         }
 
-        int yOffset = findBestLeverYOffset(cornerX, cornerZ, rotation);
-        if (yOffset == Integer.MIN_VALUE) {
+        int leverCount = countLeversAtYOffset(roomCornerX, roomCornerZ, roomRotation, roomYOffset);
+        if (leverCount < 5) {
             return false;
         }
 
-        return detectTopY(cornerX, cornerZ, rotation, yOffset) != Integer.MIN_VALUE;
+        int topY = detectTopY(roomCornerX, roomCornerZ, roomRotation, roomYOffset);
+        if (topY == Integer.MIN_VALUE) {
+            return false;
+        }
+
+        Integer detectedVariant = detectVariant(roomCornerX, roomCornerZ, roomRotation, topY);
+        if (detectedVariant == null) {
+            return false;
+        }
+
+        roomTopY = topY;
+        if (variant == null) {
+            variant = detectedVariant;
+        }
+
+        return true;
     }
 
     private int detectTopY(int cornerX, int cornerZ, int rotation, int yOffset) {
-        int[] candidates = new int[] {77 + yOffset, 78 + yOffset};
-        for (int y : candidates) {
-            BlockPos lanternPos = fromComp(cornerX, cornerZ, SEA_LANTERN_X, SEA_LANTERN_Z, y, rotation);
-            if (mc.world.getBlockState(lanternPos).getBlock() == Blocks.SEA_LANTERN) {
-                return y;
-            }
+        if (mc.world == null) {
+            return Integer.MIN_VALUE;
+        }
+
+        int y77 = 77 + yOffset;
+        BlockPos lantern77 = fromComp(cornerX, cornerZ, SEA_LANTERN_X, SEA_LANTERN_Z, y77, rotation);
+        if (mc.world.getBlockState(lantern77).getBlock() == Blocks.SEA_LANTERN) {
+            return y77;
+        }
+
+        int y78 = 78 + yOffset;
+        BlockPos lantern78 = fromComp(cornerX, cornerZ, SEA_LANTERN_X, SEA_LANTERN_Z, y78, rotation);
+        if (mc.world.getBlockState(lantern78).getBlock() == Blocks.SEA_LANTERN) {
+            return y78;
         }
 
         return Integer.MIN_VALUE;
@@ -676,7 +573,7 @@ public class WaterBoardSolver extends Module {
             }
         }
 
-        return bestCount >= 7 ? bestOffset : Integer.MIN_VALUE;
+        return bestCount >= 6 ? bestOffset : Integer.MIN_VALUE;
     }
 
     private int countLeversAtYOffset(int cornerX, int cornerZ, int rotation, int yOffset) {
@@ -710,82 +607,13 @@ public class WaterBoardSolver extends Module {
             BlockPos shiftedLeft = fromComp(cornerX, cornerZ, TOP_LEFT_X, TOP_LEFT_Z + 1, topY, rotation);
             left = mc.world.getBlockState(shiftedLeft).getBlock();
         }
+
         if (right == Blocks.AIR || right == Blocks.STONE) {
             BlockPos shiftedRight = fromComp(cornerX, cornerZ, TOP_RIGHT_X, TOP_RIGHT_Z + 1, topY, rotation);
             right = mc.world.getBlockState(shiftedRight).getBlock();
         }
 
         return mapVariant(left, right);
-    }
-
-    private Integer guessVariant(int cornerX, int cornerZ, int rotation, int topY) {
-        int bestVariant = -1;
-        int bestScore = 0;
-
-        for (int variantId = 0; variantId <= 3; variantId++) {
-            int score = scoreVariantMarkers(cornerX, cornerZ, rotation, topY, variantId);
-            if (score > bestScore) {
-                bestScore = score;
-                bestVariant = variantId;
-            }
-        }
-
-        return bestVariant >= 0 && bestScore >= 2 ? bestVariant : null;
-    }
-
-    private int scoreVariantMarkers(int cornerX, int cornerZ, int rotation, int topY, int variantId) {
-        Block expectedLeft;
-        Block expectedRight;
-
-        switch (variantId) {
-            case 0 -> {
-                expectedLeft = Blocks.GOLD_BLOCK;
-                expectedRight = Blocks.TERRACOTTA;
-            }
-            case 1 -> {
-                expectedLeft = Blocks.EMERALD_BLOCK;
-                expectedRight = Blocks.QUARTZ_BLOCK;
-            }
-            case 2 -> {
-                expectedLeft = Blocks.QUARTZ_BLOCK;
-                expectedRight = Blocks.DIAMOND_BLOCK;
-            }
-            case 3 -> {
-                expectedLeft = Blocks.GOLD_BLOCK;
-                expectedRight = Blocks.QUARTZ_BLOCK;
-            }
-            default -> {
-                return 0;
-            }
-        }
-
-        int score = 0;
-        for (int yAdjust = -2; yAdjust <= 2; yAdjust++) {
-            int y = topY + yAdjust;
-            for (int xAdjust = -2; xAdjust <= 2; xAdjust++) {
-                for (int zAdjust = -2; zAdjust <= 2; zAdjust++) {
-                    Block left = mc.world.getBlockState(fromComp(cornerX, cornerZ, TOP_LEFT_X + xAdjust, TOP_LEFT_Z + zAdjust, y, rotation)).getBlock();
-                    Block right = mc.world.getBlockState(fromComp(cornerX, cornerZ, TOP_RIGHT_X + xAdjust, TOP_RIGHT_Z + zAdjust, y, rotation)).getBlock();
-
-                    if (blockMatchesVariantMarker(left, expectedLeft)) {
-                        score++;
-                    }
-                    if (blockMatchesVariantMarker(right, expectedRight)) {
-                        score++;
-                    }
-                }
-            }
-        }
-
-        return score;
-    }
-
-    private boolean blockMatchesVariantMarker(Block found, Block expected) {
-        if (expected == Blocks.TERRACOTTA) {
-            return isTerracotta(found);
-        }
-
-        return found == expected;
     }
 
     private String detectSubvariant(int cornerX, int cornerZ, int rotation, int yOffset) {
@@ -820,64 +648,12 @@ public class WaterBoardSolver extends Module {
         if (left == Blocks.GOLD_BLOCK && right == Blocks.QUARTZ_BLOCK) {
             return 3;
         }
+
         return null;
     }
 
     private boolean isTerracotta(Block block) {
         return block == Blocks.TERRACOTTA || block == Blocks.WHITE_TERRACOTTA;
-    }
-
-    private List<String> getCandidateSubvariants() {
-        Set<String> variants = new HashSet<>();
-
-        Map<String, Map<String, EnumMap<Lever, List<Integer>>>> source = getCurrentModeSolutions();
-        if (variant != null) {
-            Map<String, EnumMap<Lever, List<Integer>>> keys = source.get(String.valueOf(variant));
-            if (keys != null) {
-                variants.addAll(keys.keySet());
-            }
-        }
-
-        if (variants.isEmpty()) {
-            for (Map<String, EnumMap<Lever, List<Integer>>> keys : source.values()) {
-                variants.addAll(keys.keySet());
-            }
-        }
-
-        return new ArrayList<>(variants);
-    }
-
-    private Integer resolveVariantForSubvariant(String subvariantKey) {
-        if (subvariantKey == null || subvariantKey.length() != 3) {
-            return null;
-        }
-
-        Map<String, Map<String, EnumMap<Lever, List<Integer>>>> source = getCurrentModeSolutions();
-
-        Integer bestVariant = null;
-        int bestScore = Integer.MIN_VALUE;
-
-        for (Map.Entry<String, Map<String, EnumMap<Lever, List<Integer>>>> entry : source.entrySet()) {
-            Map<String, EnumMap<Lever, List<Integer>>> variantMap = entry.getValue();
-            if (variantMap == null || !variantMap.containsKey(subvariantKey)) {
-                continue;
-            }
-
-            int variantId;
-            try {
-                variantId = Integer.parseInt(entry.getKey());
-            } catch (NumberFormatException ignored) {
-                continue;
-            }
-
-            int score = scoreVariantMarkers(roomCornerX, roomCornerZ, roomRotation, roomTopY, variantId);
-            if (score > bestScore) {
-                bestScore = score;
-                bestVariant = variantId;
-            }
-        }
-
-        return bestVariant;
     }
 
     private void buildSolution() {
@@ -886,7 +662,6 @@ public class WaterBoardSolver extends Module {
         }
 
         Map<String, Map<String, EnumMap<Lever, List<Integer>>>> source = getCurrentModeSolutions();
-
         Map<String, EnumMap<Lever, List<Integer>>> variants = source.get(String.valueOf(variant));
         EnumMap<Lever, List<Integer>> leverTimings = variants == null ? null : variants.get(subvariant);
 
@@ -904,8 +679,14 @@ public class WaterBoardSolver extends Module {
         List<LeverTick> sorted = new ArrayList<>();
         for (Map.Entry<Lever, List<Integer>> entry : leverTimings.entrySet()) {
             Lever lever = entry.getKey();
+            if (entry.getValue() == null) {
+                continue;
+            }
+
             for (Integer tick : entry.getValue()) {
-                sorted.add(new LeverTick(lever, tick));
+                if (tick != null) {
+                    sorted.add(new LeverTick(lever, tick));
+                }
             }
         }
 
@@ -953,6 +734,7 @@ public class WaterBoardSolver extends Module {
         Type type = new TypeToken<Map<String, Map<String, Map<String, List<Double>>>>>() {}.getType();
 
         Map<String, Map<String, Map<String, List<Double>>>> raw = null;
+
         for (String path : resourcePaths) {
             try (InputStream stream = WaterBoardSolver.class.getResourceAsStream(path)) {
                 if (stream == null) {
@@ -976,19 +758,27 @@ public class WaterBoardSolver extends Module {
         Map<String, Map<String, EnumMap<Lever, List<Integer>>>> converted = new HashMap<>();
         for (Map.Entry<String, Map<String, Map<String, List<Double>>>> variantEntry : raw.entrySet()) {
             Map<String, EnumMap<Lever, List<Integer>>> subvariants = new HashMap<>();
+            if (variantEntry.getValue() == null) {
+                continue;
+            }
 
             for (Map.Entry<String, Map<String, List<Double>>> subEntry : variantEntry.getValue().entrySet()) {
                 EnumMap<Lever, List<Integer>> leverMap = new EnumMap<>(Lever.class);
+                if (subEntry.getValue() == null) {
+                    continue;
+                }
 
                 for (Map.Entry<String, List<Double>> leverEntry : subEntry.getValue().entrySet()) {
                     Lever lever = Lever.from(leverEntry.getKey());
-                    if (lever == null) {
+                    if (lever == null || leverEntry.getValue() == null) {
                         continue;
                     }
 
                     List<Integer> ticks = new ArrayList<>();
                     for (Double seconds : leverEntry.getValue()) {
-                        ticks.add((int) Math.round(seconds * 20.0));
+                        if (seconds != null) {
+                            ticks.add((int) Math.round(seconds * 20.0));
+                        }
                     }
                     leverMap.put(lever, ticks);
                 }
@@ -1072,69 +862,6 @@ public class WaterBoardSolver extends Module {
         return new Vec3d(x, 0.0, z);
     }
 
-    private void renderPreviewLevers(MatrixStack stack) {
-        if (mc.world == null || previewLevers.isEmpty()) {
-            return;
-        }
-
-        if (previewLevers.size() < 5) {
-            return;
-        }
-
-        Color outline = new Color(120, 220, 255, 220);
-        Color fill = new Color(120, 220, 255, 75);
-
-        for (BlockPos pos : previewLevers) {
-            Box box = new Box(
-                pos.getX() + 0.12,
-                pos.getY() + 0.12,
-                pos.getZ() + 0.12,
-                pos.getX() + 0.88,
-                pos.getY() + 0.88,
-                pos.getZ() + 0.88
-            );
-            RenderUtils.drawBox(stack, box, outline, 1.5);
-            RenderUtils.drawBoxFilled(stack, box, fill);
-        }
-    }
-
-    private void renderFallbackLevers(MatrixStack stack) {
-        if (mc.world == null || roomCornerX == Integer.MIN_VALUE || roomCornerZ == Integer.MIN_VALUE) {
-            return;
-        }
-
-        Color outline = new Color(80, 210, 255, 255);
-        Color fill = new Color(80, 210, 255, 70);
-
-        for (Lever lever : Lever.values()) {
-            BlockPos pos = fromComp(roomCornerX, roomCornerZ, lever.x, lever.z, toWorldY(lever.y), roomRotation);
-            if (mc.world.getBlockState(pos).getBlock() != Blocks.LEVER) {
-                continue;
-            }
-
-            Box box = new Box(
-                pos.getX() + 0.1,
-                pos.getY() + 0.1,
-                pos.getZ() + 0.1,
-                pos.getX() + 0.9,
-                pos.getY() + 0.9,
-                pos.getZ() + 0.9
-            );
-            RenderUtils.drawBox(stack, box, outline, 1.8);
-            RenderUtils.drawBoxFilled(stack, box, fill);
-
-            if (lever == Lever.Water) {
-                RenderUtils.draw3DText(
-                    stack,
-                    "WaterBoard: detecting timings...",
-                    new Vec3d(pos.getX() + 0.5, pos.getY() + 1.3, pos.getZ() + 0.5),
-                    0.95f,
-                    0xFF9BD9FF
-                );
-            }
-        }
-    }
-
     private void resetState() {
         inWaterBoard = false;
         variant = null;
@@ -1149,6 +876,5 @@ public class WaterBoardSolver extends Module {
         lastMode = -1;
         lastUnknownKey = null;
         detectCooldownTicks = 0;
-        previewLevers.clear();
     }
 }

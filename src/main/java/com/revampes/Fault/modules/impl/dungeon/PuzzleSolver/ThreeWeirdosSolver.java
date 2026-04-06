@@ -231,22 +231,35 @@ public class ThreeWeirdosSolver extends Module {
 
 	private List<AnswerData> buildRenderAnswers() {
 		List<AnswerData> renderAnswers = new ArrayList<>(answers.values());
+		Map<BlockPos, Vec3d> allChestCandidates = collectPuzzleChestCandidates();
 		boolean hasCorrect = false;
+		Set<BlockPos> renderedChests = new HashSet<>();
+		Set<BlockPos> correctChests = new HashSet<>();
 
 		Set<BlockPos> wrongChests = new HashSet<>();
 		for (AnswerData answer : renderAnswers) {
+			renderedChests.add(answer.chestPos);
 			if (answer.isCorrect) {
 				hasCorrect = true;
+				correctChests.add(answer.chestPos);
 			} else {
 				wrongChests.add(answer.chestPos);
 			}
 		}
 
 		if (hasCorrect) {
+			for (Map.Entry<BlockPos, Vec3d> candidate : allChestCandidates.entrySet()) {
+				BlockPos chestPos = candidate.getKey();
+				if (correctChests.contains(chestPos) || renderedChests.contains(chestPos)) {
+					continue;
+				}
+
+				renderAnswers.add(new AnswerData(candidate.getValue(), chestPos, false));
+				renderedChests.add(chestPos);
+			}
 			return renderAnswers;
 		}
 
-		Map<BlockPos, Vec3d> allChestCandidates = collectPuzzleChestCandidates();
 		List<Map.Entry<BlockPos, Vec3d>> unknownCandidates = new ArrayList<>();
 		for (Map.Entry<BlockPos, Vec3d> candidate : allChestCandidates.entrySet()) {
 			if (!wrongChests.contains(candidate.getKey())) {
@@ -274,8 +287,16 @@ public class ThreeWeirdosSolver extends Module {
 				continue;
 			}
 
+			if (mc.player != null && entity.squaredDistanceTo(mc.player) > 24.0 * 24.0) {
+				continue;
+			}
+
 			BlockPos chestPos = findClosestChest(entity.getBlockPos(), 4, 6);
 			if (chestPos == null) {
+				continue;
+			}
+
+			if (mc.player != null && mc.player.squaredDistanceTo(chestPos.getX() + 0.5, chestPos.getY() + 0.5, chestPos.getZ() + 0.5) > 28.0 * 28.0) {
 				continue;
 			}
 

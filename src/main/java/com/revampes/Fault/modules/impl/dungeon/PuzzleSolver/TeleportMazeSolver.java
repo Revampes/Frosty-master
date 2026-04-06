@@ -36,7 +36,8 @@ public class TeleportMazeSolver extends Module {
 	private static final int FINISH_COMP_Z = 20;
 	private static final int FINISH_Y = 70;
 
-	private static final int DETECTION_MIN_SCORE = 50;
+	private static final int DETECTION_MIN_SCORE = 12;
+	private static final double PAD_MATCH_DISTANCE_SQ = 1.9 * 1.9;
 	private static final double ROOM_RETAIN_DISTANCE_SQ = 70.0 * 70.0;
 
 	private static final Color CORRECT_COLOR = Color.GREEN;
@@ -227,7 +228,7 @@ public class TeleportMazeSolver extends Module {
 		}
 
 		Vec3d pos = change.position();
-		if (pos == null || !isTeleportPadPosition(pos.x, pos.y, pos.z)) {
+		if (pos == null) {
 			return;
 		}
 
@@ -302,10 +303,14 @@ public class TeleportMazeSolver extends Module {
 			return;
 		}
 
-		Pad oldPad = nearestPad(oldX, oldZ);
-		Pad newPad = nearestPad(newX, newZ);
-		if (oldPad == null || newPad == null) {
+		Pad newPad = nearestPadWithin(newX, newZ, PAD_MATCH_DISTANCE_SQ);
+		if (newPad == null) {
 			return;
+		}
+
+		Pad oldPad = nearestPadWithin(oldX, oldZ, PAD_MATCH_DISTANCE_SQ);
+		if (oldPad == null) {
+			oldPad = newPad;
 		}
 
 		if (newPad.special) {
@@ -338,11 +343,17 @@ public class TeleportMazeSolver extends Module {
 	}
 
 	private Pad nearestPad(double x, double z) {
+		return nearestPadWithin(x, z, Double.MAX_VALUE);
+	}
+
+	private Pad nearestPadWithin(double x, double z, double maxDistanceSq) {
 		Pad best = null;
-		double bestDist = Double.MAX_VALUE;
+		double bestDist = maxDistanceSq;
 
 		for (Pad pad : pads) {
-			double dist = Math.abs(pad.x - x) + Math.abs(pad.z - z);
+			double dx = (pad.x + 0.5) - x;
+			double dz = (pad.z + 0.5) - z;
+			double dist = dx * dx + dz * dz;
 			if (dist < bestDist) {
 				bestDist = dist;
 				best = pad;
@@ -410,13 +421,9 @@ public class TeleportMazeSolver extends Module {
 			int compX = swapCoordinates ? comp.tx : comp.cx;
 			int compZ = swapCoordinates ? comp.tz : comp.cz;
 			BlockPos pos = fromComp(cornerX, cornerZ, compX, compZ, PAD_Y, rotation);
-			BlockState state = mc.world.getBlockState(pos);
-			Block block = state.getBlock();
-
+			Block block = mc.world.getBlockState(pos).getBlock();
 			if (block == Blocks.END_PORTAL_FRAME) {
-				score += 2;
-			} else if (!state.isAir()) {
-				score += 1;
+				score++;
 			}
 		}
 

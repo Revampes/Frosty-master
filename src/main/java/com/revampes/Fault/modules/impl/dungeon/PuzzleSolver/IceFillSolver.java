@@ -33,8 +33,8 @@ public class IceFillSolver extends Module {
 	private static final int ROOM_SIZE = 32;
 	private static final int ROOM_WORLD_START = -200;
 	private static final int[] SEARCH_DELTAS = new int[] {-ROOM_SIZE * 2, -ROOM_SIZE, 0, ROOM_SIZE, ROOM_SIZE * 2};
-	private static final double ROOM_RETAIN_DISTANCE_SQ = 28.0 * 28.0;
-	private static final double ROOM_DETECT_DISTANCE_SQ = 30.0 * 30.0;
+	private static final double ROOM_RETAIN_DISTANCE_SQ = 55.0 * 55.0;
+	private static final double ROOM_DETECT_DISTANCE_SQ = 65.0 * 65.0;
 
 	private final ColorSetting lineColor = new ColorSetting("Line Color", Color.GREEN);
 	private final ColorSetting startColor = new ColorSetting("Start Color", Color.BLUE);
@@ -353,22 +353,30 @@ public class IceFillSolver extends Module {
 		}
 
 		int validTiles = 0;
+		int totalIceLike = 0;
 		int score = 0;
 
 		for (IcePlatform platform : platforms) {
 			int platformValid = 0;
+			int platformIceLike = 0;
 
 			for (int cx = platform.corner1.x; cx <= platform.corner2.x; cx++) {
 				for (int cz = platform.corner1.z; cz <= platform.corner2.z; cz++) {
 					BlockPos pos = fromComp(cornerX, cornerZ, cx, cz, platform.end.y, rotation);
 					BlockState base = mc.world.getBlockState(pos);
-					if (!isIceLikeBlock(base)) {
+					if (!isWalkBlock(base)) {
 						continue;
 					}
 
 					platformValid++;
 					validTiles++;
-					score += 4;
+					if (isIceLikeBlock(base)) {
+						platformIceLike++;
+						totalIceLike++;
+						score += 4;
+					} else {
+						score += 1;
+					}
 
 					if (mc.world.getBlockState(pos.up()).isAir()) {
 						score += 1;
@@ -380,13 +388,17 @@ public class IceFillSolver extends Module {
 				return null;
 			}
 
+			if (platformIceLike == 0) {
+				return null;
+			}
+
 			BlockPos endPos = fromComp(cornerX, cornerZ, platform.end.x, platform.end.z, platform.end.y, rotation);
 			if (isWalkBlock(mc.world.getBlockState(endPos))) {
-				score += 5;
+				score += 3;
 			}
 		}
 
-		if (validTiles < 18) {
+		if (validTiles < 22 || totalIceLike < 8) {
 			return null;
 		}
 		return new RoomCandidate(cornerX, cornerZ, rotation, score, validTiles, distanceSq);
@@ -574,7 +586,7 @@ public class IceFillSolver extends Module {
 
 		private int minimumDetectTiles() {
 			int area = (corner2.x - corner1.x + 1) * (corner2.z - corner1.z + 1);
-			return Math.max(3, area / 3);
+			return Math.max(2, area / 4);
 		}
 
 		private int idAt(int x, int z) {
@@ -714,6 +726,8 @@ public class IceFillSolver extends Module {
 			if (mc.player == null) {
 				return;
 			}
+
+			solution = null;
 
 			int total = 0;
 			int odd = 0;
