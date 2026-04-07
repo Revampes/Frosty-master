@@ -11,6 +11,7 @@ import net.minecraft.block.entity.SkullBlockEntity;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3d;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -22,6 +23,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class DungeonUtils {
+    public static final int DUNGEON_ROOM_SIZE = 32;
+    public static final int DUNGEON_ROOM_WORLD_START = -200;
+
     private static final Pattern DUNGEON_TEAMMATE_TAB_PATTERN = Pattern.compile(
         "^\\[(\\d+)]\\s+(?:\\[[^\\]]+\\]\\s+)*(\\w{1,16})\\s+.*?\\((\\w+)(?:\\s+([IVXLCDM]+|\\d+))?\\)\\s*$",
         Pattern.CASE_INSENSITIVE
@@ -36,6 +40,109 @@ public class DungeonUtils {
      */
     public static boolean isInDungeon() {
         return LocationUtils.isInDungeon();
+    }
+
+    public static int toRoomCorner(int coord) {
+        return Math.floorDiv(coord - DUNGEON_ROOM_WORLD_START, DUNGEON_ROOM_SIZE) * DUNGEON_ROOM_SIZE + DUNGEON_ROOM_WORLD_START;
+    }
+
+    public static int toRoomCorner(double coord) {
+        return toRoomCorner((int) Math.floor(coord));
+    }
+
+    public static double playerDistanceSqToRoomCenter(int cornerX, int cornerZ) {
+        if (mc == null || mc.player == null) {
+            return Double.MAX_VALUE;
+        }
+
+        double centerX = cornerX + 15.5;
+        double centerZ = cornerZ + 15.5;
+        return mc.player.squaredDistanceTo(centerX, mc.player.getY(), centerZ);
+    }
+
+    public static BlockPos fromRoomCoordinates(int cornerX, int cornerZ, int compX, int compZ, int y, int rotation) {
+        int x;
+        int z;
+
+        switch (rotation & 3) {
+            case 1 -> {
+                x = cornerX + (31 - compZ);
+                z = cornerZ + compX;
+            }
+            case 2 -> {
+                x = cornerX + (31 - compX);
+                z = cornerZ + (31 - compZ);
+            }
+            case 3 -> {
+                x = cornerX + compZ;
+                z = cornerZ + (31 - compX);
+            }
+            default -> {
+                x = cornerX + compX;
+                z = cornerZ + compZ;
+            }
+        }
+
+        return new BlockPos(x, y, z);
+    }
+
+    public static Vec3d fromRoomCoordinates(int cornerX, int cornerZ, double compX, double compZ, int rotation) {
+        double x;
+        double z;
+
+        switch (rotation & 3) {
+            case 1 -> {
+                x = cornerX + (31.0 - compZ);
+                z = cornerZ + compX;
+            }
+            case 2 -> {
+                x = cornerX + (31.0 - compX);
+                z = cornerZ + (31.0 - compZ);
+            }
+            case 3 -> {
+                x = cornerX + compZ;
+                z = cornerZ + (31.0 - compX);
+            }
+            default -> {
+                x = cornerX + compX;
+                z = cornerZ + compZ;
+            }
+        }
+
+        return new Vec3d(x, 0.0, z);
+    }
+
+    public static int[] toRoomCoordinates(int cornerX, int cornerZ, int worldX, int worldZ, int rotation) {
+        int relX = worldX - cornerX;
+        int relZ = worldZ - cornerZ;
+
+        int compX;
+        int compZ;
+
+        switch (rotation & 3) {
+            case 1 -> {
+                compX = relZ;
+                compZ = 31 - relX;
+            }
+            case 2 -> {
+                compX = 31 - relX;
+                compZ = 31 - relZ;
+            }
+            case 3 -> {
+                compX = 31 - relZ;
+                compZ = relX;
+            }
+            default -> {
+                compX = relX;
+                compZ = relZ;
+            }
+        }
+
+        if (compX < 0 || compX > 31 || compZ < 0 || compZ > 31) {
+            return null;
+        }
+
+        return new int[] {compX, compZ};
     }
 
     /**

@@ -15,6 +15,7 @@ import com.revampes.Fault.modules.impl.dungeon.KeyHighlight;
 import com.revampes.Fault.modules.impl.dungeon.LeapMenu;
 import com.revampes.Fault.modules.impl.dungeon.LividESP;
 import com.revampes.Fault.modules.impl.dungeon.MobHighlight;
+import com.revampes.Fault.modules.impl.dungeon.PuzzleSolver.BeamsSolver;
 import com.revampes.Fault.modules.impl.dungeon.PuzzleSolver.BlazeSolver;
 import com.revampes.Fault.modules.impl.dungeon.PuzzleSolver.BoulderSolver;
 import com.revampes.Fault.modules.impl.dungeon.PuzzleSolver.IceFillSolver;
@@ -144,6 +145,7 @@ public class ModuleManager {
     public static SecretClick secretClick;
     public static LividESP lividESP;
     public static MobHighlight mobHighlight;
+    public static BeamsSolver beamsSolver;
     public static BlazeSolver blazeSolver;
     public static BoulderSolver boulderSolver;
     public static IceFillSolver iceFillSolver;
@@ -227,6 +229,7 @@ public class ModuleManager {
         this.addModule(secretClick = new SecretClick());
         this.addModule(lividESP = new LividESP());
         this.addModule(mobHighlight = new MobHighlight());
+        this.addModule(beamsSolver = new BeamsSolver());
         this.addModule(blazeSolver = new BlazeSolver());
         this.addModule(boulderSolver = new BoulderSolver());
         this.addModule(iceFillSolver = new IceFillSolver());
