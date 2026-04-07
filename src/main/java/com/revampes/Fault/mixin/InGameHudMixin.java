@@ -62,4 +62,11 @@ public abstract class InGameHudMixin {
             ci.cancel();
         }
     }
+
+    @Inject(method = "renderPortalOverlay(Lnet/minecraft/client/gui/DrawContext;F)V", at = @At("HEAD"), cancellable = true)
+    private void onRenderPortalOverlay(DrawContext context, float nauseaStrength, CallbackInfo ci) {
+        if (ModuleManager.antiDebuff.isEnabled() && ModuleManager.antiDebuff.antiPortal.isToggled()) {
+            ci.cancel();
+        }
+    }
 }
