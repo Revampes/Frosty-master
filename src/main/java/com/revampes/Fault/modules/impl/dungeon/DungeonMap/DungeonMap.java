@@ -26,6 +26,7 @@ import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.SkinTextures;
+import net.minecraft.item.ItemStack;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
 
@@ -53,7 +54,8 @@ public class DungeonMap extends Module {
     private final ButtonSetting showRoomNames = new ButtonSetting("Show Room Names", true);
     private final ButtonSetting showCheckmarks = new ButtonSetting("Show Checkmarks", true);
     private final ButtonSetting showTeammateIcons = new ButtonSetting("Show Teammates", true);
-    private final ButtonSetting showTeammateNames = new ButtonSetting("Show Teammate Names", false);
+    private final ButtonSetting alwaysShowTeammateNames = new ButtonSetting("Always show names", false);
+    private final ButtonSetting holdLeapToShowNames = new ButtonSetting("Hold leap to show names", false);
     private final ButtonSetting headBorder = new ButtonSetting("Head Border", false);
 
     private final ColorSetting backgroundColor = new ColorSetting("Background", new Color(0, 0, 0, 130));
@@ -131,7 +133,8 @@ public class DungeonMap extends Module {
         this.registerSetting(showRoomNames);
         this.registerSetting(showCheckmarks);
         this.registerSetting(showTeammateIcons);
-        this.registerSetting(showTeammateNames);
+        this.registerSetting(alwaysShowTeammateNames);
+        this.registerSetting(holdLeapToShowNames);
         this.registerSetting(headBorder);
 
         this.registerSetting(backgroundColor);
@@ -168,8 +171,9 @@ public class DungeonMap extends Module {
         playerHeadSize.setVisibilityCondition(showTeammateIcons::isToggled);
         playerHeadBackgroundSize.setVisibilityCondition(showTeammateIcons::isToggled);
         headBorder.setVisibilityCondition(showTeammateIcons::isToggled);
-        showTeammateNames.setVisibilityCondition(showTeammateIcons::isToggled);
-        teammateNameGap.setVisibilityCondition(() -> showTeammateIcons.isToggled() && showTeammateNames.isToggled());
+        alwaysShowTeammateNames.setVisibilityCondition(showTeammateIcons::isToggled);
+        holdLeapToShowNames.setVisibilityCondition(showTeammateIcons::isToggled);
+        teammateNameGap.setVisibilityCondition(() -> showTeammateIcons.isToggled() && (alwaysShowTeammateNames.isToggled() || holdLeapToShowNames.isToggled()));
         headBorderWidth.setVisibilityCondition(() -> showTeammateIcons.isToggled() && headBorder.isToggled());
         selfHeadBorderColor.setVisibilityCondition(() -> showTeammateIcons.isToggled() && headBorder.isToggled());
         teammateHeadBorderColor.setVisibilityCondition(() -> showTeammateIcons.isToggled() && headBorder.isToggled());
@@ -583,6 +587,7 @@ public class DungeonMap extends Module {
         List<? extends PlayerEntity> players = mc.world.getPlayers();
         int dotColor = teammateColor.getRGB();
         Map<String, PlayerListEntry> playerEntryLookup = buildPlayerEntryLookup();
+        boolean showTeammateNames = shouldRenderTeammateNames();
 
         Set<Integer> usedMarkerIndices = new HashSet<>();
         List<DungeonMapState.PlayerMarker> validMarkers = new ArrayList<>(markers.size());
@@ -673,7 +678,7 @@ public class DungeonMap extends Module {
             int bg = player == mc.player ? 0xFF2B4D4D : 0xFF202020;
             drawMarkerHeadOrDot(event, player, px, py, color, bg, player == mc.player);
 
-            if (showTeammateNames.isToggled() && player.getName() != null) {
+            if (showTeammateNames && player.getName() != null) {
                 drawTeammateName(event, player.getName().getString(), px, getTeammateNameY(py));
             }
         }
@@ -713,7 +718,7 @@ public class DungeonMap extends Module {
                     py = smoothed[1];
 
                     drawMarkerHeadOrDot(event, matchedEntry, marker.rotation(), px, py, dotColor, 0xFF202020, false);
-                    if (showTeammateNames.isToggled()) {
+                    if (showTeammateNames) {
                         drawTeammateName(event, entryName, px, getTeammateNameY(py));
                     }
                     continue;
@@ -726,10 +731,35 @@ public class DungeonMap extends Module {
             py = smoothed[1];
 
             drawFallbackMarker(event, px, py, dotColor, 0xFF202020, false);
-            if (showTeammateNames.isToggled() && !resolvedName.isBlank()) {
+            if (showTeammateNames && !resolvedName.isBlank()) {
                 drawTeammateName(event, resolvedName, px, getTeammateNameY(py));
             }
         }
+    }
+
+    private boolean shouldRenderTeammateNames() {
+        if (alwaysShowTeammateNames.isToggled()) {
+            return true;
+        }
+        if (!holdLeapToShowNames.isToggled() || mc == null || mc.player == null) {
+            return false;
+        }
+
+        return isLeapItem(mc.player.getMainHandStack()) || isLeapItem(mc.player.getOffHandStack());
+    }
+
+    private boolean isLeapItem(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return false;
+        }
+
+        String itemName = stack.getName() == null ? "" : stack.getName().getString();
+        if (itemName.isBlank()) {
+            return false;
+        }
+
+        String lowerName = itemName.toLowerCase();
+        return lowerName.contains("spirit leap") || lowerName.contains("infinileap") || lowerName.contains("infinite leap");
     }
 
     private Map<String, PlayerListEntry> buildPlayerEntryLookup() {

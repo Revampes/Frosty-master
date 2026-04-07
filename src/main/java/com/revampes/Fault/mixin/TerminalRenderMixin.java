@@ -15,7 +15,11 @@ public abstract class TerminalRenderMixin {
 
     @Inject(method = "render", at = @At("HEAD"), cancellable = true)
     private void onRender(DrawContext context, int mouseX, int mouseY, float deltaTicks, CallbackInfo ci) {
-        if (ModuleManager.terminalManager != null && ModuleManager.terminalManager.hasActiveTerminal()) {
+        HandledScreen<?> screen = (HandledScreen<?>) (Object) this;
+        boolean hideForTerminal = ModuleManager.terminalManager != null && ModuleManager.terminalManager.hasActiveTerminal();
+        boolean hideForLeap = ModuleManager.leapMenu != null && ModuleManager.leapMenu.shouldHideOriginalContainer(screen);
+
+        if (hideForTerminal || hideForLeap) {
             Revampes.EVENT_BUS.post(new RenderScreenEvent(context, mouseX, mouseY, deltaTicks, (HandledScreen<?>) (Object) this));
             ci.cancel();
         }
@@ -24,7 +28,11 @@ public abstract class TerminalRenderMixin {
     @Inject(method = "renderBackground", at = @At("HEAD"), cancellable = true)
     private void onRenderBackground(DrawContext context, int mouseX, int mouseY, float deltaTicks, CallbackInfo ci) {
         // Hide container background when terminal is active
-        if (ModuleManager.terminalManager != null && ModuleManager.terminalManager.hasActiveTerminal()) {
+        HandledScreen<?> screen = (HandledScreen<?>) (Object) this;
+        boolean hideForTerminal = ModuleManager.terminalManager != null && ModuleManager.terminalManager.hasActiveTerminal();
+        boolean hideForLeap = ModuleManager.leapMenu != null && ModuleManager.leapMenu.shouldHideOriginalContainer(screen);
+
+        if (hideForTerminal || hideForLeap) {
             ci.cancel();
         }
     }
@@ -32,7 +40,11 @@ public abstract class TerminalRenderMixin {
     @Inject(method = "drawMouseoverTooltip", at = @At("HEAD"), cancellable = true)
     private void hideTooltip(DrawContext context, int x, int y, CallbackInfo ci) {
         // Hide tooltips when terminal is active
-        if (ModuleManager.terminalManager != null && ModuleManager.terminalManager.hasActiveTerminal()) {
+        HandledScreen<?> screen = (HandledScreen<?>) (Object) this;
+        boolean hideForTerminal = ModuleManager.terminalManager != null && ModuleManager.terminalManager.hasActiveTerminal();
+        boolean hideForLeap = ModuleManager.leapMenu != null && ModuleManager.leapMenu.shouldHideOriginalContainer(screen);
+
+        if (hideForTerminal || hideForLeap) {
             ci.cancel();
         }
     }
