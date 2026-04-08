@@ -12,6 +12,7 @@ import com.revampes.Fault.modules.impl.combat.AutoClicker;
 import com.revampes.Fault.modules.impl.combat.KillAura;
 import com.revampes.Fault.modules.impl.combat.Velocity;
 import com.revampes.Fault.modules.impl.dungeon.AutoLeap;
+import com.revampes.Fault.modules.impl.dungeon.AutoCroesus;
 import com.revampes.Fault.modules.impl.dungeon.KeyHighlight;
 import com.revampes.Fault.modules.impl.dungeon.LeapMenu;
 import com.revampes.Fault.modules.impl.dungeon.LividESP;
@@ -148,6 +149,7 @@ public class ModuleManager {
     public static SlotBinds slotBinds;
     public static HotbarSwap hotbarSwap;
     public static AutoLeap autoLeap;
+    public static AutoCroesus autoCroesus;
     public static LeapMenu leapMenu;
     public static TerminalManager terminalManager;
     public static AutoTerminals autoTerminals;
@@ -224,6 +226,7 @@ public class ModuleManager {
         this.addModule(slotBinds = new SlotBinds());
         this.addModule(hotbarSwap = new HotbarSwap());
         this.addModule(autoLeap = new AutoLeap());
+        this.addModule(autoCroesus = new AutoCroesus());
         this.addModule(leapMenu = new LeapMenu());
         this.addModule(terminalManager = new TerminalManager());
         this.addModule(autoTerminals = new AutoTerminals());
