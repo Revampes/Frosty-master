@@ -1,5 +1,6 @@
 package com.revampes.Fault.modules.impl.dungeon;
 
+import com.revampes.Fault.events.impl.MouseButtonEvent;
 import com.revampes.Fault.events.impl.PostUpdateEvent;
 import com.revampes.Fault.events.impl.RenderScreenEvent;
 import com.revampes.Fault.mixin.HandledScreenAccessor;
@@ -7,6 +8,7 @@ import com.revampes.Fault.modules.Module;
 import com.revampes.Fault.settings.impl.ButtonSetting;
 import com.revampes.Fault.settings.impl.SliderSetting;
 import com.revampes.Fault.utility.DungeonUtils;
+import com.revampes.Fault.utility.KeyAction;
 import com.revampes.Fault.utility.Utils;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
@@ -15,6 +17,7 @@ import net.minecraft.registry.Registries;
 import net.minecraft.screen.GenericContainerScreenHandler;
 import net.minecraft.screen.slot.Slot;
 import net.minecraft.screen.slot.SlotActionType;
+import net.minecraft.util.Hand;
 
 import java.util.LinkedHashMap;
 import java.util.Locale;
@@ -25,6 +28,7 @@ public class AutoLeap extends Module {
 	private static final int LAST_LEAP_SLOT = 17;
 	private static final int NAME_COLOR = 0xFF3FCE3F;
 	private static final int MAX_NAME_LENGTH = 5;
+	private static final long LEAP_OPEN_TIMEOUT_MS = 2500L;
 
 	private final ButtonSetting autoTpToMage = new ButtonSetting("Auto Tp To Mage", false);
 	private final SliderSetting autoTpDelayMs = new SliderSetting("Auto Tp Delay", "ms", 1000.0, 100.0, 5000.0, 50.0);
@@ -32,6 +36,8 @@ public class AutoLeap extends Module {
 
 	private final Map<Integer, String> shortNamesBySlot = new LinkedHashMap<>();
 	private long lastClickAtMs = 0L;
+	private boolean pendingAutoTpToMage = false;
+	private long pendingAutoTpStartedAtMs = 0L;
 
 	public AutoLeap() {
 		super("AutoLeap", "Auto leap to mage and render leap names.", category.Dungeon);
@@ -46,19 +52,57 @@ public class AutoLeap extends Module {
 	public void onDisable() {
 		shortNamesBySlot.clear();
 		lastClickAtMs = 0L;
+		clearPendingAutoTp();
+	}
+
+	@EventHandler
+	public void onMouseButton(MouseButtonEvent event) {
+		if (!autoTpToMage.isToggled() || event.action != KeyAction.Press) {
+			return;
+		}
+		if (!DungeonUtils.isInDungeon() || mc.player == null || mc.interactionManager == null) {
+			return;
+		}
+		if (mc.currentScreen != null) {
+			return;
+		}
+
+		int attackKeyCode = mc.options.attackKey.getDefaultKey().getCode();
+		if (event.button != attackKeyCode) {
+			return;
+		}
+		if (!isLeapItem(mc.player.getMainHandStack())) {
+			return;
+		}
+
+		long now = System.currentTimeMillis();
+		long clickDelayMs = (long) autoTpDelayMs.getInput();
+		if (now - lastClickAtMs < clickDelayMs) {
+			return;
+		}
+
+		event.cancel();
+		mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
+		pendingAutoTpToMage = true;
+		pendingAutoTpStartedAtMs = now;
 	}
 
 	@EventHandler
 	public void onUpdate(PostUpdateEvent event) {
 		if (!DungeonUtils.isInDungeon()) {
 			shortNamesBySlot.clear();
+			clearPendingAutoTp();
 			return;
+		}
+		if (!autoTpToMage.isToggled()) {
+			clearPendingAutoTp();
 		}
 
 		HandledScreen<?> screen = getOpenLeapScreen();
 		GenericContainerScreenHandler handler = getLeapHandler(screen);
 		if (screen == null || handler == null) {
 			shortNamesBySlot.clear();
+			isPendingAutoTpValid();
 			return;
 		}
 
@@ -68,8 +112,8 @@ public class AutoLeap extends Module {
 			shortNamesBySlot.clear();
 		}
 
-		if (autoTpToMage.isToggled()) {
-			tryLeapToMage(handler);
+		if (isPendingAutoTpValid() && tryLeapToMage(handler)) {
+			clearPendingAutoTp();
 		}
 	}
 
@@ -114,20 +158,20 @@ public class AutoLeap extends Module {
 		}
 	}
 
-	private void tryLeapToMage(GenericContainerScreenHandler handler) {
+	private boolean tryLeapToMage(GenericContainerScreenHandler handler) {
 		if (mc.player == null || mc.interactionManager == null) {
-			return;
+			return false;
 		}
 
 		long now = System.currentTimeMillis();
 		long clickDelayMs = (long) autoTpDelayMs.getInput();
 		if (now - lastClickAtMs < clickDelayMs) {
-			return;
+			return false;
 		}
 
 		Map<String, DungeonUtils.DungeonTeammate> teammateLookup = DungeonUtils.getDungeonTeammateLookup();
 		if (teammateLookup.isEmpty()) {
-			return;
+			return false;
 		}
 
 		int maxSlotExclusive = Math.min(handler.slots.size(), LAST_LEAP_SLOT + 1);
@@ -149,8 +193,10 @@ public class AutoLeap extends Module {
 
 			mc.interactionManager.clickSlot(handler.syncId, slotIndex, 0, SlotActionType.PICKUP, mc.player);
 			lastClickAtMs = now;
-			return;
+			return true;
 		}
+
+		return false;
 	}
 
 	private void cacheShortNames(GenericContainerScreenHandler handler) {
@@ -202,6 +248,35 @@ public class AutoLeap extends Module {
 	private boolean isPlaceholder(ItemStack stack) {
 		String itemId = Registries.ITEM.getId(stack.getItem()).toString();
 		return itemId.contains("stained_glass_pane");
+	}
+
+	private boolean isPendingAutoTpValid() {
+		if (!pendingAutoTpToMage) {
+			return false;
+		}
+
+		long now = System.currentTimeMillis();
+		if (now - pendingAutoTpStartedAtMs > LEAP_OPEN_TIMEOUT_MS) {
+			clearPendingAutoTp();
+			return false;
+		}
+
+		return true;
+	}
+
+	private void clearPendingAutoTp() {
+		pendingAutoTpToMage = false;
+		pendingAutoTpStartedAtMs = 0L;
+	}
+
+	private boolean isLeapItem(ItemStack stack) {
+		if (stack == null || stack.isEmpty()) {
+			return false;
+		}
+
+		String rawName = stack.getName() == null ? "" : stack.getName().getString();
+		String lowerName = Utils.stripColor(rawName).toLowerCase(Locale.ROOT);
+		return lowerName.contains("spirit leap") || lowerName.contains("infinileap") || lowerName.contains("infinite leap");
 	}
 
 	private String normalizePlayerName(String raw) {
