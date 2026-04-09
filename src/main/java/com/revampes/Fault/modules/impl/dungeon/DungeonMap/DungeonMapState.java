@@ -55,6 +55,8 @@ public class DungeonMapState {
 
     private long lastModelScanMs = 0L;
     private int roomTransformMode = 0;
+    private int roomWorldOffsetX = 0;
+    private int roomWorldOffsetZ = 0;
     private int lastTransformScore = Integer.MIN_VALUE;
 
     public DungeonMapState() {
@@ -78,6 +80,8 @@ public class DungeonMapState {
             Arrays.fill(verticalConnectorType[z], CONNECTOR_UNKNOWN);
         }
         roomTransformMode = 0;
+        roomWorldOffsetX = 0;
+        roomWorldOffsetZ = 0;
         lastTransformScore = Integer.MIN_VALUE;
         lastModelScanMs = 0L;
         for (int z = 0; z < cachedRoomColor.length; z++) {
@@ -224,6 +228,7 @@ public class DungeonMapState {
             int extraZ = startZ == 5 ? 1 : 0;
             this.roomsX = clamp(5 + extraX, 4, 6);
             this.roomsZ = clamp(5 + extraZ, 4, 6);
+            resetWorldOffsetsFromRoomCount();
             return;
         }
 
@@ -232,6 +237,7 @@ public class DungeonMapState {
             this.startCoords = new MapVec2i(11, 11);
             this.roomsX = 6;
             this.roomsZ = 6;
+            resetWorldOffsetsFromRoomCount();
         }
     }
 
@@ -249,6 +255,8 @@ public class DungeonMapState {
         TransformResult transformResult = pickBestRoomTransform(mc);
         if (shouldSwitchTransform(transformResult)) {
             roomTransformMode = transformResult.mode();
+            roomWorldOffsetX = transformResult.worldOffsetX();
+            roomWorldOffsetZ = transformResult.worldOffsetZ();
             lastTransformScore = transformResult.score();
         }
 
@@ -611,54 +619,76 @@ public class DungeonMapState {
 
     private TransformResult pickBestRoomTransform(MinecraftClient mc) {
         int bestMode = roomTransformMode;
+        int bestOffsetX = roomWorldOffsetX;
+        int bestOffsetZ = roomWorldOffsetZ;
         int bestScore = Integer.MIN_VALUE;
         int bestKnown = 0;
+        int preferredOffsetX = defaultWorldOffsetForRoomCount(roomsX);
+        int preferredOffsetZ = defaultWorldOffsetForRoomCount(roomsZ);
+        int bestOffsetPenalty = Integer.MAX_VALUE;
+
+        int[] offsetCandidatesX = candidateWorldOffsets(roomsX);
+        int[] offsetCandidatesZ = candidateWorldOffsets(roomsZ);
 
         for (int mode = 0; mode < 4; mode++) {
-            int score = 0;
-            int known = 0;
-            for (int rz = 0; rz < roomsZ; rz++) {
-                for (int rx = 0; rx < roomsX; rx++) {
-                    int roomColor = getRoomColorValue(rx, rz);
-                    if (roomColor == 0) {
-                        continue;
+            for (int worldOffsetX : offsetCandidatesX) {
+                for (int worldOffsetZ : offsetCandidatesZ) {
+                    int score = 0;
+                    int known = 0;
+                    for (int rz = 0; rz < roomsZ; rz++) {
+                        for (int rx = 0; rx < roomsX; rx++) {
+                            int roomColor = getRoomColorValue(rx, rz);
+                            if (roomColor == 0) {
+                                continue;
+                            }
+
+                            int[] worldPos = mapRoomToWorld(rx, rz, mode, worldOffsetX, worldOffsetZ);
+                            if (!isChunkLoaded(mc, worldPos[0], worldPos[1])) {
+                                continue;
+                            }
+
+                            int core = getCoreAtRoomCenter(mc, worldPos[0], worldPos[1]);
+                            DungeonRoomDatabase.RoomKind kind = roomDatabase.getKindForCore(core);
+                            if (kind != DungeonRoomDatabase.RoomKind.UNKNOWN) {
+                                score += 3;
+                                known++;
+                            }
+                            if (roomColor == 18 && kind == DungeonRoomDatabase.RoomKind.BLOOD) {
+                                score += 5;
+                            }
+                            if (roomColor == 30 && kind == DungeonRoomDatabase.RoomKind.ENTRANCE) {
+                                score += 4;
+                            }
+                        }
                     }
 
-                    int[] worldPos = mapRoomToWorld(rx, rz, mode);
-                    if (!isChunkLoaded(mc, worldPos[0], worldPos[1])) {
-                        continue;
-                    }
-
-                    int core = getCoreAtRoomCenter(mc, worldPos[0], worldPos[1]);
-                    DungeonRoomDatabase.RoomKind kind = roomDatabase.getKindForCore(core);
-                    if (kind != DungeonRoomDatabase.RoomKind.UNKNOWN) {
-                        score += 3;
-                        known++;
-                    }
-                    if (roomColor == 18 && kind == DungeonRoomDatabase.RoomKind.BLOOD) {
-                        score += 5;
-                    }
-                    if (roomColor == 30 && kind == DungeonRoomDatabase.RoomKind.ENTRANCE) {
-                        score += 4;
+                    int offsetPenalty = Math.abs(worldOffsetX - preferredOffsetX) + Math.abs(worldOffsetZ - preferredOffsetZ);
+                    if (
+                        score > bestScore
+                            || (score == bestScore && known > bestKnown)
+                            || (score == bestScore && known == bestKnown && offsetPenalty < bestOffsetPenalty)
+                    ) {
+                        bestScore = score;
+                        bestMode = mode;
+                        bestKnown = known;
+                        bestOffsetX = worldOffsetX;
+                        bestOffsetZ = worldOffsetZ;
+                        bestOffsetPenalty = offsetPenalty;
                     }
                 }
             }
-
-            if (score > bestScore) {
-                bestScore = score;
-                bestMode = mode;
-                bestKnown = known;
-            }
         }
 
-        return new TransformResult(bestMode, bestScore, bestKnown);
+        return new TransformResult(bestMode, bestScore, bestKnown, bestOffsetX, bestOffsetZ);
     }
 
     private boolean shouldSwitchTransform(TransformResult candidate) {
         if (lastTransformScore == Integer.MIN_VALUE) {
             return true;
         }
-        if (candidate.mode() == roomTransformMode) {
+        if (candidate.mode() == roomTransformMode
+            && candidate.worldOffsetX() == roomWorldOffsetX
+            && candidate.worldOffsetZ() == roomWorldOffsetZ) {
             return true;
         }
 
@@ -670,16 +700,20 @@ public class DungeonMapState {
     }
 
     private int[] mapRoomToWorld(int roomX, int roomZ, int mode) {
+        return mapRoomToWorld(roomX, roomZ, mode, roomWorldOffsetX, roomWorldOffsetZ);
+    }
+
+    private int[] mapRoomToWorld(int roomX, int roomZ, int mode, int worldOffsetX, int worldOffsetZ) {
         int tx = ((mode & 1) != 0) ? (roomsX - 1 - roomX) : roomX;
         int tz = ((mode & 2) != 0) ? (roomsZ - 1 - roomZ) : roomZ;
         return new int[] {
-            ROOM_WORLD_START + tx * 32,
-            ROOM_WORLD_START + tz * 32
+            ROOM_WORLD_START + worldOffsetX + tx * 32,
+            ROOM_WORLD_START + worldOffsetZ + tz * 32
         };
     }
 
     public float worldToMapNormalizedX(double worldX) {
-        double n = (worldX - ROOM_WORLD_CORNER_START) / (roomsX * 32.0);
+        double n = (worldX - (ROOM_WORLD_CORNER_START + roomWorldOffsetX)) / (roomsX * 32.0);
         if ((roomTransformMode & 1) != 0) {
             n = 1.0 - n;
         }
@@ -687,11 +721,48 @@ public class DungeonMapState {
     }
 
     public float worldToMapNormalizedZ(double worldZ) {
-        double n = (worldZ - ROOM_WORLD_CORNER_START) / (roomsZ * 32.0);
+        double n = (worldZ - (ROOM_WORLD_CORNER_START + roomWorldOffsetZ)) / (roomsZ * 32.0);
         if ((roomTransformMode & 2) != 0) {
             n = 1.0 - n;
         }
         return (float) n;
+    }
+
+    private void resetWorldOffsetsFromRoomCount() {
+        roomWorldOffsetX = defaultWorldOffsetForRoomCount(roomsX);
+        roomWorldOffsetZ = defaultWorldOffsetForRoomCount(roomsZ);
+    }
+
+    private static int defaultWorldOffsetForRoomCount(int roomCount) {
+        int clampedCount = clamp(roomCount, 4, 6);
+        return (6 - clampedCount) * 16;
+    }
+
+    private static int[] candidateWorldOffsets(int roomCount) {
+        int preferred = defaultWorldOffsetForRoomCount(roomCount);
+        int[] raw = new int[] { preferred, 0, 16, 32 };
+        int[] unique = new int[raw.length];
+        int count = 0;
+
+        for (int candidate : raw) {
+            if (candidate < 0 || candidate > 32) {
+                continue;
+            }
+
+            boolean exists = false;
+            for (int i = 0; i < count; i++) {
+                if (unique[i] == candidate) {
+                    exists = true;
+                    break;
+                }
+            }
+
+            if (!exists) {
+                unique[count++] = candidate;
+            }
+        }
+
+        return Arrays.copyOf(unique, count);
     }
 
     public int getRoomColorValue(int roomX, int roomZ) {
@@ -1493,7 +1564,7 @@ public class DungeonMapState {
     public record RoomSnapshot(int roomId, DungeonRoomDatabase.RoomKind kind, String name, int mapColor) {
     }
 
-    private record TransformResult(int mode, int score, int knownRooms) {
+    private record TransformResult(int mode, int score, int knownRooms, int worldOffsetX, int worldOffsetZ) {
     }
 
     private record ConnectorRef(boolean horizontal, int z, int x) {

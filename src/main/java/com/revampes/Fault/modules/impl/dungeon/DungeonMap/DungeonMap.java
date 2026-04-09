@@ -588,6 +588,7 @@ public class DungeonMap extends Module {
         int dotColor = teammateColor.getRGB();
         Map<String, PlayerListEntry> playerEntryLookup = buildPlayerEntryLookup();
         boolean showTeammateNames = shouldRenderTeammateNames();
+        boolean smallFloorLayout = state.getRoomsX() < 6 || state.getRoomsZ() < 6;
 
         Set<Integer> usedMarkerIndices = new HashSet<>();
         List<DungeonMapState.PlayerMarker> validMarkers = new ArrayList<>(markers.size());
@@ -620,6 +621,7 @@ public class DungeonMap extends Module {
             DungeonMapState.PlayerMarker bestMarker = null;
             int bestIndex = -1;
             double bestDist = Double.MAX_VALUE;
+            boolean bestLabelMatch = false;
             String playerName = player.getName() == null ? "" : player.getName().getString().toLowerCase();
 
             for (int i = 0; i < validMarkers.size(); i++) {
@@ -642,6 +644,7 @@ public class DungeonMap extends Module {
                     bestDist = score;
                     bestMarker = marker;
                     bestIndex = i;
+                    bestLabelMatch = labelMatch;
                 }
             }
 
@@ -655,11 +658,13 @@ public class DungeonMap extends Module {
                 }
             }
 
+            boolean worldLooksValid = worldNx > -0.20 && worldNx < 1.20 && worldNz > -0.20 && worldNz < 1.20;
             if (bestMarker != null) {
                 double markerNx = (bestMarker.mapX() - startX) / (double) mapPixelW;
                 double markerNz = (bestMarker.mapZ() - startZ) / (double) mapPixelH;
-                boolean worldLooksValid = worldNx > -0.20 && worldNx < 1.20 && worldNz > -0.20 && worldNz < 1.20;
-                if (!worldLooksValid) {
+                boolean markerCloseEnough = bestDist <= 0.05;
+                boolean shouldUseMarker = player == mc.player || bestLabelMatch || (smallFloorLayout && markerCloseEnough) || !worldLooksValid;
+                if (shouldUseMarker) {
                     nx = markerNx;
                     nz = markerNz;
                 }
