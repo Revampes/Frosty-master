@@ -51,6 +51,7 @@ public class AutoCroesus extends Module {
 	private static final Map<String, String> ITEM_REPLACEMENTS = createItemReplacements();
 
 	private final SliderSetting clickDelay = new SliderSetting("Click Delay", "ms", 300.0, 100.0, 1000.0, 25.0);
+	private final ButtonSetting autoBuy = new ButtonSetting("Auto Buy", false);
 	private final ButtonSetting chestKeys = new ButtonSetting("Use chest keys", false);
 	private final SliderSetting chestKeyMinProfit = new SliderSetting("Key min profit", "m", 0.5, 0.0, 2.0, 0.01);
 	private final ButtonSetting kismets = new ButtonSetting("Use Kismet", false);
@@ -66,11 +67,13 @@ public class AutoCroesus extends Module {
 	private long nextClickAtMs = 0L;
 	private Reward pendingReward = null;
 	private boolean ignoreNextClosePacket = false;
+	private boolean autoBuyNoticeSent = false;
 
 	public AutoCroesus() {
 		super("AutoCroesus", "Automatically opens profitable Croesus chests.", category.Dungeon);
 
 		registerSetting(clickDelay);
+		registerSetting(autoBuy);
 		registerSetting(chestKeys);
 		registerSetting(chestKeyMinProfit);
 		registerSetting(kismets);
@@ -179,6 +182,7 @@ public class AutoCroesus extends Module {
 		action = Action.CROESUS;
 		pendingReward = null;
 		kismetting = false;
+		autoBuyNoticeSent = false;
 		nextClickAtMs = 0L;
 
 		if (!clickCroesus()) {
@@ -205,6 +209,7 @@ public class AutoCroesus extends Module {
 		pendingReward = null;
 		nextClickAtMs = 0L;
 		ignoreNextClosePacket = false;
+		autoBuyNoticeSent = false;
 	}
 
 	private void tickCroesus() {
@@ -249,6 +254,10 @@ public class AutoCroesus extends Module {
 			return;
 		}
 
+		if (!isClickReady()) {
+			return;
+		}
+
 		List<Reward> rewards = new ArrayList<>();
 		int maxSlots = Math.min(menu.slots.size(), 46);
 		for (int i = 0; i < maxSlots; i++) {
@@ -274,13 +283,13 @@ public class AutoCroesus extends Module {
 			&& isKismetAvailable(menu)
 			&& isKismetFloorEnabled(floorToken)
 			&& bedrock.chest.profit < kismetsMinProfit.getInput() * 1_000_000.0) {
-
-			kismetting = true;
-			action = Action.CHEST;
-			pendingReward = bedrock;
-
 			if (isRewardSlotValid(bedrock.slot)) {
-				clickSlot(menu.syncId, bedrock.slot);
+				if (clickSlot(menu.syncId, bedrock.slot)) {
+					kismetting = true;
+					action = Action.CHEST;
+					pendingReward = bedrock;
+					autoBuyNoticeSent = false;
+				}
 			} else {
 				modMessage(Formatting.RED + "Invalid chest slot: " + bedrock.slot);
 				resetState();
@@ -301,10 +310,12 @@ public class AutoCroesus extends Module {
 			return;
 		}
 
-		modMessage("Claiming " + best.name + Formatting.RESET + " chest | Profit: " + formatProfit(best.chest.profit));
-		pendingReward = best;
-		action = Action.CHEST;
-		clickSlot(menu.syncId, best.slot);
+		if (clickSlot(menu.syncId, best.slot)) {
+			modMessage("Claiming " + best.name + Formatting.RESET + " chest | Profit: " + formatProfit(best.chest.profit));
+			pendingReward = best;
+			action = Action.CHEST;
+			autoBuyNoticeSent = false;
+		}
 	}
 
 	private void tickChest() {
@@ -333,8 +344,11 @@ public class AutoCroesus extends Module {
 				return;
 			}
 
-			action = Action.REWARDS;
-			clickSlot(menu.syncId, 50);
+			if (clickSlot(menu.syncId, 50)) {
+				action = Action.REWARDS;
+			} else {
+				kismetting = true;
+			}
 			return;
 		}
 
@@ -360,7 +374,19 @@ public class AutoCroesus extends Module {
 			}
 		}
 
-		clickSlot(menu.syncId, 31);
+		if (!autoBuy.isToggled()) {
+			if (!autoBuyNoticeSent) {
+				autoBuyNoticeSent = true;
+				modMessage("Auto Buy is disabled. Open the chest manually to purchase.");
+			}
+			return;
+		}
+
+		autoBuyNoticeSent = false;
+
+		if (!clickSlot(menu.syncId, 31)) {
+			return;
+		}
 
 		if (pendingReward != null) {
 			CroesusLoader.addRunLog(pendingReward.chest);
@@ -445,19 +471,16 @@ public class AutoCroesus extends Module {
 				continue;
 			}
 
-			RunType runType = RunType.findByDisplayName(stack.getName().getString());
-			if (runType == RunType.NONE) {
-				continue;
-			}
-
 			List<String> lore = getCleanLore(stack);
-			boolean hasUnopened = lore.stream().anyMatch(line -> line.contains("No chests opened yet!"));
+			boolean hasUnopened = lore.stream().anyMatch(line -> line.toLowerCase(Locale.ROOT).contains("no chests opened yet"));
 			if (!hasUnopened) {
 				continue;
 			}
 
-			action = Action.REWARDS;
-			clickSlot(menu.syncId, slot.id);
+			if (clickSlot(menu.syncId, slot.id)) {
+				action = Action.REWARDS;
+				autoBuyNoticeSent = false;
+			}
 			return true;
 		}
 
@@ -766,13 +789,14 @@ public class AutoCroesus extends Module {
 		return parseIntSafe(matcher.group(1), -1);
 	}
 
-	private void clickSlot(int windowId, int slot) {
+	private boolean clickSlot(int windowId, int slot) {
 		if (mc.player == null || mc.interactionManager == null || !isClickReady()) {
-			return;
+			return false;
 		}
 
 		mc.interactionManager.clickSlot(windowId, slot, 0, SlotActionType.PICKUP, mc.player);
 		setClickDelay();
+		return true;
 	}
 
 	private void skipChest(String message) {
