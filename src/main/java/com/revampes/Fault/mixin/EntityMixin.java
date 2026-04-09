@@ -11,11 +11,13 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import com.revampes.Fault.Revampes;
 import com.revampes.Fault.events.impl.StrafeEvent;
 import com.revampes.Fault.interfaces.ICameraOverriddenEntity;
 import com.revampes.Fault.modules.ModuleManager;
 import com.revampes.Fault.modules.impl.render.FreeLook;
+import com.revampes.Fault.modules.impl.render.HidePlayer;
 
 @Mixin(Entity.class)
 public abstract class EntityMixin implements ICameraOverriddenEntity {
@@ -62,6 +64,17 @@ public abstract class EntityMixin implements ICameraOverriddenEntity {
             this.cameraPitch = MathHelper.clamp(this.cameraPitch + (float)pitchDelta, -90.0f, 90.0f);
             this.cameraYaw += (float)yawDelta;
             ci.cancel();
+        }
+    }
+
+    @Inject(method = "canHit", at = @At("HEAD"), cancellable = true)
+    private void canHit$hidePlayerHitThrough(CallbackInfoReturnable<Boolean> cir) {
+        if (!((Object) this instanceof Entity entity)) {
+            return;
+        }
+
+        if (HidePlayer.shouldHitThrough(entity) && HidePlayer.shouldHideEntity(entity)) {
+            cir.setReturnValue(false);
         }
     }
 

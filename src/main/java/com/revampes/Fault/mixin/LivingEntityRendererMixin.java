@@ -21,6 +21,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import com.revampes.Fault.interfaces.IEntityRenderState;
 import com.revampes.Fault.modules.ModuleManager;
+import com.revampes.Fault.modules.impl.render.HidePlayer;
 
 import java.util.regex.Matcher;
 
@@ -38,6 +39,10 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
     private void render$Head(S state, MatrixStack matrixStack, OrderedRenderCommandQueue orderedRenderCommandQueue, CameraRenderState cameraRenderState, CallbackInfo ci) {
         Entity entity = ((IEntityRenderState) state).revampes$getEntity();
         if (!(entity instanceof LivingEntity livingEntity)) return;
+
+        if (ModuleManager.hidePlayer != null && ModuleManager.hidePlayer.isEnabled() && HidePlayer.shouldHideEntity(entity)) {
+            ci.cancel();
+        }
     }
 
     @Inject(method = "render(Lnet/minecraft/client/render/entity/state/LivingEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/command/OrderedRenderCommandQueue;Lnet/minecraft/client/render/state/CameraRenderState;)V", at = @At("TAIL"))

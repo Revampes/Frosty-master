@@ -66,6 +66,7 @@ import com.revampes.Fault.modules.impl.render.Fullbright;
 import com.revampes.Fault.modules.impl.render.Etherwarp;
 import com.revampes.Fault.modules.impl.render.HUD;
 import com.revampes.Fault.modules.impl.render.InvisbugESP;
+import com.revampes.Fault.modules.impl.render.HidePlayer;
 import com.revampes.Fault.modules.impl.render.NickHider;
 import com.revampes.Fault.modules.impl.render.NoBlur;
 import com.revampes.Fault.modules.impl.render.NoHudElement;
@@ -156,6 +157,7 @@ public class ModuleManager {
     public static TerminalManager terminalManager;
     public static AutoTerminals autoTerminals;
     public static DungeonMap dungeonMap;
+    public static HidePlayer hidePlayer;
 
     public void register() {
         this.addModule(tps = new TPS());
@@ -234,6 +236,7 @@ public class ModuleManager {
         this.addModule(terminalManager = new TerminalManager());
         this.addModule(autoTerminals = new AutoTerminals());
         this.addModule(dungeonMap = new DungeonMap());
+        this.addModule(hidePlayer = new HidePlayer());
         modules.sort(Comparator.comparing(Module::getName));
     }
 
