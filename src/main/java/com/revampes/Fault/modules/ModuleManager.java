@@ -42,6 +42,7 @@ import com.revampes.Fault.modules.impl.movement.GuiMove;
 import com.revampes.Fault.modules.impl.movement.Sprint;
 import com.revampes.Fault.modules.impl.other.AntiBot;
 import com.revampes.Fault.modules.impl.other.AutoExperiment;
+import com.revampes.Fault.modules.impl.other.AutoGFS;
 import com.revampes.Fault.modules.impl.other.AutoPetNotification;
 import com.revampes.Fault.modules.impl.other.AutoReconnect;
 import com.revampes.Fault.modules.impl.other.AutoSellModule;
@@ -131,6 +132,7 @@ public class ModuleManager {
     public static GardenCleaner gardenCleaner;
     public static Cape cape;
     public static BlockAnimation blockAnimation;
+    public static AutoGFS autoGFS;
     public static AutoPetNotification autoPetNotification;
     public static LifeSaverTimer lifeSaverTimer;
     public static PanelCommand panelCommand;
@@ -207,6 +209,7 @@ public class ModuleManager {
         this.addModule(gardenCleaner = new GardenCleaner());
         this.addModule(cape = new Cape());
         this.addModule(blockAnimation = new BlockAnimation());
+        this.addModule(autoGFS = new AutoGFS());
         this.addModule(autoPetNotification = new AutoPetNotification());
         this.addModule(ragnarockTimer = new RagnarockTimer());
         this.addModule(lifeSaverTimer = new LifeSaverTimer());

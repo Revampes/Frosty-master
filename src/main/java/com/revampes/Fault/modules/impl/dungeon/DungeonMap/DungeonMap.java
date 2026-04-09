@@ -109,7 +109,7 @@ public class DungeonMap extends Module {
         "sniper", "crypt souleater", "lonely spider", "cellar spider", "withermancer", "skeletor", "skeletor prime",
         "super archer", "fels", "mimic", "deathmite", "blaze", "bat", "prince", "fairy", "revoker", "psycho",
         "reaper", "parasite", "cannibal", "mute", "ooze", "putrid", "freak", "leech", "flamer", "tear", "skull",
-        "mr. dead", "vader", "frost", "walker", "wandering soul", "giant"
+        "mr. dead", "vader", "frost", "walker", "wandering soul", "giant", "angry archaeologist"
     };
 
     public DungeonMap() {
