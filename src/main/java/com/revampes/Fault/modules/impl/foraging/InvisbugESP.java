@@ -25,7 +25,7 @@ public class InvisbugESP extends Module {
    private static Map<Box, Long> currentInvisbug = new ConcurrentHashMap<>();
 
    public InvisbugESP() {
-      super("InvisbugESP", category.Render);
+      super("InvisbugESP", category.Foraging);
    }
 
    @Override
