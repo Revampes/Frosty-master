@@ -18,6 +18,7 @@ import com.revampes.Fault.modules.impl.dungeon.KeyHighlight;
 import com.revampes.Fault.modules.impl.dungeon.LeapMenu;
 import com.revampes.Fault.modules.impl.dungeon.LividESP;
 import com.revampes.Fault.modules.impl.dungeon.MobHighlight;
+import com.revampes.Fault.modules.impl.dungeon.SecretESP;
 import com.revampes.Fault.modules.impl.dungeon.SecretClick;
 import com.revampes.Fault.modules.impl.dungeon.ThornStun;
 import com.revampes.Fault.modules.impl.dungeon.DungeonMap.DungeonMap;
@@ -139,6 +140,7 @@ public class ModuleManager {
     public static LifeSaverTimer lifeSaverTimer;
     public static PanelCommand panelCommand;
     public static AutoSellModule AutoSellModule;
+    public static SecretESP secretESP;
     public static SecretClick secretClick;
     public static LividESP lividESP;
     public static MobHighlight mobHighlight;
@@ -219,6 +221,7 @@ public class ModuleManager {
         this.addModule(lifeSaverTimer = new LifeSaverTimer());
         this.addModule(panelCommand = new PanelCommand());
         this.addModule(AutoSellModule = new AutoSellModule());
+        this.addModule(secretESP = new SecretESP());
         this.addModule(secretClick = new SecretClick());
         this.addModule(lividESP = new LividESP());
         this.addModule(mobHighlight = new MobHighlight());
