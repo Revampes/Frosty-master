@@ -18,6 +18,7 @@ import com.revampes.Fault.modules.impl.dungeon.KeyHighlight;
 import com.revampes.Fault.modules.impl.dungeon.LeapMenu;
 import com.revampes.Fault.modules.impl.dungeon.LividESP;
 import com.revampes.Fault.modules.impl.dungeon.MobHighlight;
+import com.revampes.Fault.modules.impl.dungeon.AutoTNT;
 import com.revampes.Fault.modules.impl.dungeon.SecretESP;
 import com.revampes.Fault.modules.impl.dungeon.SecretClick;
 import com.revampes.Fault.modules.impl.dungeon.ThornStun;
@@ -155,6 +156,7 @@ public class ModuleManager {
     public static SlotBinds slotBinds;
     public static HotbarSwap hotbarSwap;
     public static AutoLeap autoLeap;
+    public static AutoTNT autoTNT;
     public static AutoCroesus autoCroesus;
     public static AutoCloseSecretChest autoCloseSecretChest;
     public static LeapMenu leapMenu;
@@ -236,6 +238,7 @@ public class ModuleManager {
         this.addModule(slotBinds = new SlotBinds());
         this.addModule(hotbarSwap = new HotbarSwap());
         this.addModule(autoLeap = new AutoLeap());
+        this.addModule(autoTNT = new AutoTNT());
         this.addModule(autoCroesus = new AutoCroesus());
         this.addModule(autoCloseSecretChest = new AutoCloseSecretChest());
         this.addModule(leapMenu = new LeapMenu());
