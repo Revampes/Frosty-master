@@ -32,7 +32,7 @@ public class AutoSellModule extends Module {
             "beating heart", "premium flesh", "mimic fragment", "enchanted rotten flesh", "sign",
             "enchanted bone", "defuse kit", "optical lens", "tripwire hook", "button", "carpet", "lever", "diamond atom",
             "healing viii splash potion", "healing 8 splash potion", "candycomb", "rune", "flaming chestplate", "bouncy",
-            "revive stone"
+            "revive stone", "earthen blade"
     );
 
     private int tickCounter = 0;
