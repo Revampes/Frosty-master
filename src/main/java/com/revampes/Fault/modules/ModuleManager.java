@@ -34,6 +34,7 @@ import com.revampes.Fault.modules.impl.hunting.AutoReel;
 import com.revampes.Fault.modules.impl.hunting.Hideonleaf;
 import com.revampes.Fault.modules.impl.kuudra.BuildHelper;
 import com.revampes.Fault.modules.impl.kuudra.CrateAura;
+import com.revampes.Fault.modules.impl.kuudra.KuudraInfo;
 import com.revampes.Fault.modules.impl.kuudra.Pearl;
 import com.revampes.Fault.modules.impl.kuudra.Priority;
 import com.revampes.Fault.modules.impl.kuudra.RemovePerks;
@@ -146,6 +147,7 @@ public class ModuleManager {
     public static LividESP lividESP;
     public static MobHighlight mobHighlight;
     public static BuildHelper buildHelper;
+    public static KuudraInfo kuudraInfo;
     public static RemovePerks removePerks;
     public static ThornStun thornStun;
     public static SupplyHelper supplyHelper;
@@ -228,6 +230,7 @@ public class ModuleManager {
         this.addModule(lividESP = new LividESP());
         this.addModule(mobHighlight = new MobHighlight());
         this.addModule(buildHelper = new BuildHelper());
+        this.addModule(kuudraInfo = new KuudraInfo());
         this.addModule(removePerks = new RemovePerks());
         this.addModule(thornStun = new ThornStun());
         this.addModule(supplyHelper = new SupplyHelper());

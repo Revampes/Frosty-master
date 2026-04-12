@@ -10,6 +10,7 @@ import com.revampes.Fault.utility.RenderUtils;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
 import java.awt.Color;
@@ -26,7 +27,7 @@ public class Pearl extends Module {
     private static final double E_VEL = 1.67;
 
     private final Map<Supply, BlockPos> enumToLineup = new HashMap<>();
-    private final Map<Lineup, Color> pearlLineups = new HashMap<>();
+    private final Map<Lineup, Color> pearlLineups = new LinkedHashMap<>();
 
     public Pearl() {
         super("Pearl Waypoints", category.Kuudra);
@@ -101,17 +102,21 @@ public class Pearl extends Module {
 
             for (BlockPos blockPos : lineup.lineups) {
                 Supply missing = ModuleManager.priority != null ? ModuleManager.priority.missing : Supply.None;
-                boolean isMissingTarget = missing == Supply.None || missing == Supply.Square;
-                boolean isSquareTarget = lineup.supply != Supply.Square || enumToLineup.get(missing) != null && enumToLineup.get(missing).equals(blockPos);
+                boolean shouldRenderLineup =
+                    (missing == Supply.None
+                        || missing == Supply.Square
+                        || lineup.supply != Supply.Square
+                        || Objects.equals(enumToLineup.get(missing), blockPos))
+                    && (!hideFarWaypoints.isToggled() || closest);
 
-                if ((isMissingTarget || isSquareTarget) && (!hideFarWaypoints.isToggled() || closest)) {
+                if (shouldRenderLineup) {
                     if (presetWaypoints.isToggled()) {
-                        RenderUtils.drawBoxFilled(event.getMatrix(), new Box(blockPos), new Color(color.getRed(), color.getGreen(), color.getBlue(), 80));
-                        RenderUtils.drawBox(event.getMatrix(), new Box(blockPos), color, 2.0);
+                        RenderUtils.drawBoxFilled(event.getMatrix(), new Box(blockPos), color);
                     }
+
                     if (dynamicWaypoints.isToggled()) {
                         Supply destinationSupply = lineup.supply == Supply.Square ? missing : lineup.supply;
-                        PearlResult result = calculatePearl(destinationSupply.getDropOffSpot());
+                        PearlResult result = calculatePearl(destinationSupply.getDropOffSpot(), event.getDelta());
                         if (result != null) {
                             Box upBox = new Box(result.upAngle.x - 0.06, result.upAngle.y - 0.06, result.upAngle.z - 0.06,
                                                 result.upAngle.x + 0.06, result.upAngle.y + 0.06, result.upAngle.z + 0.06);
@@ -120,6 +125,7 @@ public class Pearl extends Module {
 
                             RenderUtils.drawBoxFilled(event.getMatrix(), upBox, dynamicWaypointsColor.getColor());
                             RenderUtils.drawBoxFilled(event.getMatrix(), flatBox, dynamicWaypointsColor.getColor());
+                            renderTimingLabels(event, result);
                         }
                         RenderUtils.drawBox(event.getMatrix(), new Box(lineup.supply.getDropOffSpot().up()), dynamicWaypointsColor.getColor(), 2.0);
                     }
@@ -127,6 +133,17 @@ public class Pearl extends Module {
             }
             closest = false;
         }
+    }
+
+    private void renderTimingLabels(Render3DEvent event, PearlResult result) {
+        int upTicks = Math.max(0, result.upTiming);
+        int flatTicks = Math.max(0, result.flatTiming);
+
+        Vec3d upTextPos = result.upAngle.add(0.0, 0.18, 0.0);
+        Vec3d flatTextPos = result.flatAngle.add(0.0, 0.18, 0.0);
+
+        RenderUtils.draw3DText(event.getMatrix(), "§dUp §f" + upTicks + "t", upTextPos, 0.8f);
+        RenderUtils.draw3DText(event.getMatrix(), "§bFlat §f" + flatTicks + "t", flatTextPos, 0.8f);
     }
 
     private LinkedHashMap<Lineup, Color> getOrderedLineups(BlockPos pos) {
@@ -147,12 +164,12 @@ public class Pearl extends Module {
         return sortedMap;
     }
 
-    private PearlResult calculatePearl(BlockPos targetPos) {
+    private PearlResult calculatePearl(BlockPos targetPos, float partialTicks) {
         if (mc.player == null) return null;
-        
-        double posX = mc.player.getX();
-        double posY = mc.player.getY();
-        double posZ = mc.player.getZ();
+
+        double posX = MathHelper.lerp(partialTicks, mc.player.lastRenderX, mc.player.getX());
+        double posY = MathHelper.lerp(partialTicks, mc.player.lastRenderY, mc.player.getY());
+        double posZ = MathHelper.lerp(partialTicks, mc.player.lastRenderZ, mc.player.getZ());
 
         double offX = targetPos.getX() - posX;
         double offY = targetPos.getY() - (posY + 1.62);
@@ -244,14 +261,13 @@ public class Pearl extends Module {
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            Lineup lineup = (Lineup) o;
-            return supply == lineup.supply;
+            if (!(o instanceof Lineup lineup)) return false;
+            return supply == lineup.supply && Objects.equals(startPos, lineup.startPos) && Objects.equals(lineups, lineup.lineups);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(supply);
+            return Objects.hash(supply, startPos, lineups);
         }
     }
 
