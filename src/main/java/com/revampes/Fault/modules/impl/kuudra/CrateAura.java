@@ -26,7 +26,7 @@ import java.util.Locale;
 
 public class CrateAura extends Module {
 
-    private static final double PICKUP_RADIUS = 3.5;
+    private static final double PICKUP_RADIUS = 4.0;
     private static final double PICKUP_RADIUS_SQ = PICKUP_RADIUS * PICKUP_RADIUS;
     private static final double TARGET_NEAR_SPOT_RADIUS_SQ = 16.0;
     private static final double PICKUP_VERTICAL_TOLERANCE = 12.0;

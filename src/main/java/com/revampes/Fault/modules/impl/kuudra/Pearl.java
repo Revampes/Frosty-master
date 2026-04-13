@@ -5,6 +5,7 @@ import com.revampes.Fault.modules.Module;
 import com.revampes.Fault.modules.ModuleManager;
 import com.revampes.Fault.settings.impl.ButtonSetting;
 import com.revampes.Fault.settings.impl.ColorSetting;
+import com.revampes.Fault.settings.impl.SliderSetting;
 import com.revampes.Fault.utility.KuudraUtils;
 import com.revampes.Fault.utility.RenderUtils;
 import meteordevelopment.orbit.EventHandler;
@@ -20,7 +21,14 @@ public class Pearl extends Module {
 
     private final ButtonSetting dynamicWaypoints = new ButtonSetting("Dynamic Waypoints", false);
     private final ColorSetting dynamicWaypointsColor = new ColorSetting("Dynamic Color", new Color(170, 0, 170));
+    private final SliderSetting dynamicMarkerSize = new SliderSetting("Dynamic Marker Size", 0.2, 0.05, 1.0, 0.01);
+    private final SliderSetting labelSize = new SliderSetting("Timing Label Size", 1.2, 0.5, 5.0, 0.1);
+    private final ColorSetting labelColor = new ColorSetting("Timing Label Color", new Color(255, 255, 255));
     private final ButtonSetting presetWaypoints = new ButtonSetting("Preset Waypoints", true);
+    private final SliderSetting lineupWaypointSize = new SliderSetting("Lineup Waypoint Size", 1.6, 0.5, 5.0, 0.1);
+    private final SliderSetting lineupWaypointLineWidth = new SliderSetting("Lineup Line Width", 2.5, 1.0, 8.0, 0.1);
+    private final ButtonSetting customLineupColor = new ButtonSetting("Custom Lineup Color", false);
+    private final ColorSetting lineupWaypointColor = new ColorSetting("Lineup Color", new Color(255, 170, 85));
     private final ButtonSetting hideFarWaypoints = new ButtonSetting("Hide Far Waypoints", true);
 
     private static final double GRAV = 0.05;
@@ -33,8 +41,25 @@ public class Pearl extends Module {
         super("Pearl Waypoints", category.Kuudra);
         this.registerSetting(dynamicWaypoints);
         this.registerSetting(dynamicWaypointsColor);
+        this.registerSetting(dynamicMarkerSize);
+        this.registerSetting(labelSize);
+        this.registerSetting(labelColor);
         this.registerSetting(presetWaypoints);
+        this.registerSetting(lineupWaypointSize);
+        this.registerSetting(lineupWaypointLineWidth);
+        this.registerSetting(customLineupColor);
+        this.registerSetting(lineupWaypointColor);
         this.registerSetting(hideFarWaypoints);
+
+        dynamicWaypointsColor.setVisibilityCondition(dynamicWaypoints::isToggled);
+        dynamicMarkerSize.setVisibilityCondition(dynamicWaypoints::isToggled);
+        labelSize.setVisibilityCondition(dynamicWaypoints::isToggled);
+        labelColor.setVisibilityCondition(dynamicWaypoints::isToggled);
+
+        lineupWaypointSize.setVisibilityCondition(presetWaypoints::isToggled);
+        lineupWaypointLineWidth.setVisibilityCondition(presetWaypoints::isToggled);
+        customLineupColor.setVisibilityCondition(presetWaypoints::isToggled);
+        lineupWaypointColor.setVisibilityCondition(() -> presetWaypoints.isToggled() && customLineupColor.isToggled());
 
         initMaps();
     }
@@ -92,11 +117,11 @@ public class Pearl extends Module {
 
         for (Map.Entry<Lineup, Color> entry : getOrderedLineups(playerPos).entrySet()) {
             Lineup lineup = entry.getKey();
-            Color color = entry.getValue();
+            Color renderColor = getLineupRenderColor(entry.getValue());
 
             for (BlockPos startPos : lineup.startPos) {
                 if (presetWaypoints.isToggled()) {
-                    RenderUtils.drawBox(event.getMatrix(), new Box(startPos), color, 2.0);
+                    RenderUtils.drawBox(event.getMatrix(), getScaledBlockBox(startPos), renderColor, lineupWaypointLineWidth.getInput());
                 }
             }
 
@@ -111,23 +136,30 @@ public class Pearl extends Module {
 
                 if (shouldRenderLineup) {
                     if (presetWaypoints.isToggled()) {
-                        RenderUtils.drawBoxFilled(event.getMatrix(), new Box(blockPos), color);
+                        RenderUtils.drawBoxFilled(event.getMatrix(), getScaledBlockBox(blockPos), withAlpha(renderColor, 110));
+                        RenderUtils.drawBox(event.getMatrix(), getScaledBlockBox(blockPos), renderColor, lineupWaypointLineWidth.getInput());
                     }
 
                     if (dynamicWaypoints.isToggled()) {
-                        Supply destinationSupply = lineup.supply == Supply.Square ? missing : lineup.supply;
-                        PearlResult result = calculatePearl(destinationSupply.getDropOffSpot(), event.getDelta());
-                        if (result != null) {
-                            Box upBox = new Box(result.upAngle.x - 0.06, result.upAngle.y - 0.06, result.upAngle.z - 0.06,
-                                                result.upAngle.x + 0.06, result.upAngle.y + 0.06, result.upAngle.z + 0.06);
-                            Box flatBox = new Box(result.flatAngle.x - 0.06, result.flatAngle.y - 0.06, result.flatAngle.z - 0.06,
-                                                  result.flatAngle.x + 0.06, result.flatAngle.y + 0.06, result.flatAngle.z + 0.06);
+                        Supply destinationSupply = resolveDestinationSupply(lineup, blockPos, missing);
+                        if (destinationSupply != Supply.None && destinationSupply != Supply.Square) {
+                            BlockPos destinationPos = destinationSupply.getDropOffSpot();
+                            PearlResult result = calculatePearl(destinationPos, event.getDelta());
+                            if (result != null) {
+                                double markerHalf = Math.max(0.02, dynamicMarkerSize.getInput() / 2.0);
+                                Box upBox = new Box(result.upAngle.x - markerHalf, result.upAngle.y - markerHalf, result.upAngle.z - markerHalf,
+                                                    result.upAngle.x + markerHalf, result.upAngle.y + markerHalf, result.upAngle.z + markerHalf);
+                                Box flatBox = new Box(result.flatAngle.x - markerHalf, result.flatAngle.y - markerHalf, result.flatAngle.z - markerHalf,
+                                                      result.flatAngle.x + markerHalf, result.flatAngle.y + markerHalf, result.flatAngle.z + markerHalf);
 
-                            RenderUtils.drawBoxFilled(event.getMatrix(), upBox, dynamicWaypointsColor.getColor());
-                            RenderUtils.drawBoxFilled(event.getMatrix(), flatBox, dynamicWaypointsColor.getColor());
-                            renderTimingLabels(event, result);
+                                RenderUtils.drawBoxFilled(event.getMatrix(), upBox, dynamicWaypointsColor.getColor());
+                                RenderUtils.drawBoxFilled(event.getMatrix(), flatBox, dynamicWaypointsColor.getColor());
+                                renderTimingLabels(event, result);
+                            }
+
+                            // Supply dropOffSpot is the intended pearl landing coordinate.
+                            RenderUtils.drawBox(event.getMatrix(), getScaledBlockBox(destinationPos), dynamicWaypointsColor.getColor(), lineupWaypointLineWidth.getInput());
                         }
-                        RenderUtils.drawBox(event.getMatrix(), new Box(lineup.supply.getDropOffSpot().up()), dynamicWaypointsColor.getColor(), 2.0);
                     }
                 }
             }
@@ -139,11 +171,67 @@ public class Pearl extends Module {
         int upTicks = Math.max(0, result.upTiming);
         int flatTicks = Math.max(0, result.flatTiming);
 
-        Vec3d upTextPos = result.upAngle.add(0.0, 0.18, 0.0);
-        Vec3d flatTextPos = result.flatAngle.add(0.0, 0.18, 0.0);
+        double yOffset = Math.max(0.12, dynamicMarkerSize.getInput() + 0.06);
+        float textScale = (float) Math.max(0.1, labelSize.getInput());
+        int textColor = labelColor.getColor().getRGB();
 
-        RenderUtils.draw3DText(event.getMatrix(), "§dUp §f" + upTicks + "t", upTextPos, 0.8f);
-        RenderUtils.draw3DText(event.getMatrix(), "§bFlat §f" + flatTicks + "t", flatTextPos, 0.8f);
+        Vec3d upTextPos = result.upAngle.add(0.0, yOffset, 0.0);
+        Vec3d flatTextPos = result.flatAngle.add(0.0, yOffset, 0.0);
+
+        RenderUtils.draw3DText(event.getMatrix(), "Up " + upTicks + "t", upTextPos, textScale, textColor);
+        RenderUtils.draw3DText(event.getMatrix(), "Flat " + flatTicks + "t", flatTextPos, textScale, textColor);
+    }
+
+    private Color getLineupRenderColor(Color defaultColor) {
+        if (customLineupColor.isToggled()) {
+            return lineupWaypointColor.getColor();
+        }
+        return defaultColor;
+    }
+
+    private Box getScaledBlockBox(BlockPos blockPos) {
+        double scale = Math.max(0.1, lineupWaypointSize.getInput());
+        double half = scale / 2.0;
+
+        double centerX = blockPos.getX() + 0.5;
+        double centerY = blockPos.getY() + 0.5;
+        double centerZ = blockPos.getZ() + 0.5;
+
+        return new Box(
+            centerX - half, centerY - half, centerZ - half,
+            centerX + half, centerY + half, centerZ + half
+        );
+    }
+
+    private Color withAlpha(Color color, int alpha) {
+        int clampedAlpha = MathHelper.clamp(alpha, 0, 255);
+        return new Color(color.getRed(), color.getGreen(), color.getBlue(), clampedAlpha);
+    }
+
+    private Supply resolveDestinationSupply(Lineup lineup, BlockPos lineupPos, Supply missing) {
+        if (lineup.supply != Supply.Square) {
+            return lineup.supply;
+        }
+
+        Supply mappedSupply = getSupplyForLineupPosition(lineupPos);
+        if (mappedSupply != Supply.None) {
+            return mappedSupply;
+        }
+
+        if (missing != Supply.None && missing != Supply.Square) {
+            return missing;
+        }
+
+        return Supply.None;
+    }
+
+    private Supply getSupplyForLineupPosition(BlockPos lineupPos) {
+        for (Map.Entry<Supply, BlockPos> entry : enumToLineup.entrySet()) {
+            if (Objects.equals(entry.getValue(), lineupPos)) {
+                return entry.getKey();
+            }
+        }
+        return Supply.None;
     }
 
     private LinkedHashMap<Lineup, Color> getOrderedLineups(BlockPos pos) {

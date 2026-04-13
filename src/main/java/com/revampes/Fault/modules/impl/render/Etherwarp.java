@@ -29,6 +29,7 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.shape.VoxelShape;
 import net.minecraft.world.RaycastContext;
 
 import java.awt.Color;
@@ -82,7 +83,7 @@ public class Etherwarp extends Module {
 
     @EventHandler
     public void onRender3D(Render3DEvent event) {
-        if (mc.currentScreen != null || !render.isToggled()) return;
+        if (mc.currentScreen != null || !render.isToggled() || mc.player == null || mc.world == null) return;
 
         ItemStack mainHandItem = mc.player.getMainHandStack();
         if (mainHandItem.isEmpty()) return;
@@ -116,7 +117,12 @@ public class Etherwarp extends Module {
             } else {
                 BlockState state = mc.world.getBlockState(etherPos.pos);
                 if (!state.isAir()) {
-                    box = state.getOutlineShape(mc.world, etherPos.pos).getBoundingBox().offset(etherPos.pos);
+                    VoxelShape outlineShape = state.getOutlineShape(mc.world, etherPos.pos);
+                    if (outlineShape.isEmpty()) {
+                        box = new Box(etherPos.pos);
+                    } else {
+                        box = outlineShape.getBoundingBox().offset(etherPos.pos);
+                    }
                 } else {
                     box = new Box(etherPos.pos);
                 }

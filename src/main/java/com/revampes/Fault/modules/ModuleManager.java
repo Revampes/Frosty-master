@@ -32,6 +32,7 @@ import com.revampes.Fault.modules.impl.foraging.SeaLumiesNuker;
 import com.revampes.Fault.modules.impl.foraging.WoodNuker;
 import com.revampes.Fault.modules.impl.hunting.AutoReel;
 import com.revampes.Fault.modules.impl.hunting.Hideonleaf;
+import com.revampes.Fault.modules.impl.kuudra.AutoGetTAP;
 import com.revampes.Fault.modules.impl.kuudra.BuildHelper;
 import com.revampes.Fault.modules.impl.kuudra.CrateAura;
 import com.revampes.Fault.modules.impl.kuudra.KuudraInfo;
@@ -151,6 +152,7 @@ public class ModuleManager {
     public static RemovePerks removePerks;
     public static ThornStun thornStun;
     public static SupplyHelper supplyHelper;
+    public static AutoGetTAP autoGetTAP;
     public static Priority priority;
     public static Pearl pearl;
     public static CrateAura crateAura;
@@ -234,6 +236,7 @@ public class ModuleManager {
         this.addModule(removePerks = new RemovePerks());
         this.addModule(thornStun = new ThornStun());
         this.addModule(supplyHelper = new SupplyHelper());
+        this.addModule(autoGetTAP = new AutoGetTAP());
         this.addModule(priority = new Priority());
         this.addModule(pearl = new Pearl());
         this.addModule(crateAura = new CrateAura());
