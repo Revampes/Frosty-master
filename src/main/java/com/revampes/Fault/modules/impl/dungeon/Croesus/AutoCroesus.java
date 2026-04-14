@@ -1,7 +1,9 @@
 package com.revampes.Fault.modules.impl.dungeon;
 
 import com.revampes.Fault.events.impl.PreUpdateEvent;
+import com.revampes.Fault.events.impl.RenderScreenEvent;
 import com.revampes.Fault.events.impl.SendPacketEvent;
+import com.revampes.Fault.mixin.HandledScreenAccessor;
 import com.revampes.Fault.modules.Module;
 import com.revampes.Fault.settings.impl.ButtonSetting;
 import com.revampes.Fault.settings.impl.InputSetting;
@@ -29,6 +31,7 @@ import net.minecraft.util.math.Vec3d;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -49,6 +52,8 @@ public class AutoCroesus extends Module {
 	private static final Pattern FLOOR_PATTERN = Pattern.compile("Floor\\s+([IVXLCDM]+|\\d+)", Pattern.CASE_INSENSITIVE);
 
 	private static final Map<String, String> ITEM_REPLACEMENTS = createItemReplacements();
+	private static final int HIGHLIGHT_FILL_COLOR = 0x5530D5FF;
+	private static final int HIGHLIGHT_BORDER_COLOR = 0xDD7FE7FF;
 
 	private final SliderSetting clickDelay = new SliderSetting("Click Delay", "ms", 300.0, 100.0, 1000.0, 25.0);
 	private final ButtonSetting autoBuy = new ButtonSetting("Auto Buy", false);
@@ -57,8 +62,13 @@ public class AutoCroesus extends Module {
 	private final ButtonSetting kismets = new ButtonSetting("Use Kismet", false);
 	private final SliderSetting kismetsMinProfit = new SliderSetting("Kismet min profit", "m", 2.0, 1.0, 3.5, 0.05);
 	private final InputSetting kismetFloors = new InputSetting("Kismet Floors", 64, "F1,F2,F3,F4,F5,F6,F7,M1,M2,M3,M4,M5,M6,M7");
+	private final ButtonSetting highlightUnopened = new ButtonSetting("Highlight unopened", true);
+	private final ButtonSetting chestProfitUi = new ButtonSetting("Chest profit UI", true);
 	private final ButtonSetting startButton = new ButtonSetting("Start", this::start);
 	private final ButtonSetting refreshPricesButton = new ButtonSetting("Refresh Prices", this::refreshPrices);
+
+	private final BitSet unopenedSlots = new BitSet(64);
+	private int croesusMenuSyncId = -1;
 
 	private boolean running = false;
 	private Action action = Action.IDLE;
@@ -66,6 +76,7 @@ public class AutoCroesus extends Module {
 	private int currentPage = 1;
 	private long nextClickAtMs = 0L;
 	private Reward pendingReward = null;
+	private ChestInfo uiChestPreview = null;
 	private boolean ignoreNextClosePacket = false;
 	private boolean autoBuyNoticeSent = false;
 
@@ -79,6 +90,8 @@ public class AutoCroesus extends Module {
 		registerSetting(kismets);
 		registerSetting(kismetsMinProfit);
 		registerSetting(kismetFloors);
+		registerSetting(highlightUnopened);
+		registerSetting(chestProfitUi);
 		registerSetting(startButton);
 		registerSetting(refreshPricesButton);
 
@@ -147,6 +160,34 @@ public class AutoCroesus extends Module {
 		}
 	}
 
+	@EventHandler
+	public void onRenderScreen(RenderScreenEvent event) {
+		if (!(event.screen.getScreenHandler() instanceof GenericContainerScreenHandler menu)) {
+			return;
+		}
+
+		String title = Utils.stripColor(event.screen.getTitle().getString());
+
+		if ("Croesus".equalsIgnoreCase(title)) {
+			refreshUnopenedSlots(menu);
+			if (highlightUnopened.isToggled()) {
+				drawUnopenedHighlights(event, menu);
+			}
+			return;
+		}
+
+		if (!chestProfitUi.isToggled() || !isChestTitle(title)) {
+			return;
+		}
+
+		ChestInfo preview = pendingReward != null ? pendingReward.chest : uiChestPreview;
+		if (preview == null) {
+			return;
+		}
+
+		drawChestProfitOverlay(event, preview);
+	}
+
 	public void start() {
 		start(true);
 	}
@@ -181,6 +222,7 @@ public class AutoCroesus extends Module {
 		running = true;
 		action = Action.CROESUS;
 		pendingReward = null;
+		uiChestPreview = null;
 		kismetting = false;
 		autoBuyNoticeSent = false;
 		nextClickAtMs = 0L;
@@ -207,6 +249,9 @@ public class AutoCroesus extends Module {
 		kismetting = false;
 		currentPage = 1;
 		pendingReward = null;
+		uiChestPreview = null;
+		unopenedSlots.clear();
+		croesusMenuSyncId = -1;
 		nextClickAtMs = 0L;
 		ignoreNextClosePacket = false;
 		autoBuyNoticeSent = false;
@@ -219,6 +264,7 @@ public class AutoCroesus extends Module {
 			}
 
 			currentPage = getPage(menu.slots);
+			refreshUnopenedSlots(menu);
 
 			if (tryOpenRun(menu)) {
 				return;
@@ -288,6 +334,7 @@ public class AutoCroesus extends Module {
 					kismetting = true;
 					action = Action.CHEST;
 					pendingReward = bedrock;
+					uiChestPreview = bedrock.chest;
 					autoBuyNoticeSent = false;
 				}
 			} else {
@@ -313,6 +360,7 @@ public class AutoCroesus extends Module {
 		if (clickSlot(menu.syncId, best.slot)) {
 			modMessage("Claiming " + best.name + Formatting.RESET + " chest | Profit: " + formatProfit(best.chest.profit));
 			pendingReward = best;
+			uiChestPreview = best.chest;
 			action = Action.CHEST;
 			autoBuyNoticeSent = false;
 		}
@@ -393,6 +441,7 @@ public class AutoCroesus extends Module {
 		}
 
 		pendingReward = null;
+		uiChestPreview = null;
 		action = Action.CROESUS;
 		nextClickAtMs = System.currentTimeMillis() + clickDelayMs() * 2L;
 	}
@@ -471,9 +520,7 @@ public class AutoCroesus extends Module {
 				continue;
 			}
 
-			List<String> lore = getCleanLore(stack);
-			boolean hasUnopened = lore.stream().anyMatch(line -> line.toLowerCase(Locale.ROOT).contains("no chests opened yet"));
-			if (!hasUnopened) {
+			if (!isUnopenedRunHead(stack)) {
 				continue;
 			}
 
@@ -802,9 +849,101 @@ public class AutoCroesus extends Module {
 	private void skipChest(String message) {
 		modMessage(message);
 		pendingReward = null;
+		uiChestPreview = null;
 		action = Action.CROESUS;
 		nextClickAtMs = System.currentTimeMillis() + clickDelayMs() * 2L;
 		closeCurrentScreen();
+	}
+
+	private void refreshUnopenedSlots(GenericContainerScreenHandler menu) {
+		unopenedSlots.clear();
+		croesusMenuSyncId = menu.syncId;
+
+		int limit = Math.min(54, menu.slots.size());
+		for (int i = 0; i < limit; i++) {
+			ItemStack stack = menu.slots.get(i).getStack();
+			if (isUnopenedRunHead(stack)) {
+				unopenedSlots.set(i);
+			}
+		}
+	}
+
+	private boolean isUnopenedRunHead(ItemStack stack) {
+		if (!stack.isOf(Items.PLAYER_HEAD)) {
+			return false;
+		}
+
+		List<String> lore = getCleanLore(stack);
+		for (String line : lore) {
+			if (line.toLowerCase(Locale.ROOT).contains("no chests opened yet")) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private void drawUnopenedHighlights(RenderScreenEvent event, GenericContainerScreenHandler menu) {
+		if (menu.syncId != croesusMenuSyncId || unopenedSlots.isEmpty()) {
+			return;
+		}
+
+		int left = ((HandledScreenAccessor) event.screen).getX();
+		int top = ((HandledScreenAccessor) event.screen).getY();
+
+		for (int slotId = unopenedSlots.nextSetBit(0); slotId >= 0; slotId = unopenedSlots.nextSetBit(slotId + 1)) {
+			if (slotId >= menu.slots.size()) {
+				continue;
+			}
+
+			Slot slot = menu.slots.get(slotId);
+			if (!slot.hasStack()) {
+				continue;
+			}
+
+			int x = left + slot.x;
+			int y = top + slot.y;
+
+			event.context.fill(x, y, x + 16, y + 16, HIGHLIGHT_FILL_COLOR);
+			event.context.fill(x, y, x + 16, y + 1, HIGHLIGHT_BORDER_COLOR);
+			event.context.fill(x, y + 15, x + 16, y + 16, HIGHLIGHT_BORDER_COLOR);
+			event.context.fill(x, y, x + 1, y + 16, HIGHLIGHT_BORDER_COLOR);
+			event.context.fill(x + 15, y, x + 16, y + 16, HIGHLIGHT_BORDER_COLOR);
+		}
+	}
+
+	private void drawChestProfitOverlay(RenderScreenEvent event, ChestInfo chest) {
+		int left = ((HandledScreenAccessor) event.screen).getX();
+		int top = ((HandledScreenAccessor) event.screen).getY();
+
+		int x = left + 6;
+		int y = top + 6;
+		int width = 156;
+		int height = 55;
+
+		event.context.fill(x, y, x + width, y + height, 0xA0000000);
+		event.context.fill(x, y, x + width, y + 1, 0xFF33D2FF);
+		event.context.fill(x, y + height - 1, x + width, y + height, 0xFF33D2FF);
+
+		event.context.drawTextWithShadow(mc.textRenderer, chest.type.name() + " CHEST", x + 4, y + 4, 0xFFFFFFFF);
+		event.context.drawTextWithShadow(mc.textRenderer, "Value: " + formatProfit(chest.value), x + 4, y + 16, 0xFFAAFFAA);
+		event.context.drawTextWithShadow(mc.textRenderer, "Cost: " + formatProfit(chest.cost), x + 4, y + 27, 0xFFFFAA55);
+
+		int profitColor = chest.profit >= 0.0 ? 0xFF55FF55 : 0xFFFF5555;
+		event.context.drawTextWithShadow(mc.textRenderer, "Profit: " + formatSignedProfit(chest.profit), x + 4, y + 38, profitColor);
+	}
+
+	private boolean isChestTitle(String title) {
+		if (title == null || title.isBlank()) {
+			return false;
+		}
+
+		String[] split = title.split(" ");
+		if (split.length == 0) {
+			return false;
+		}
+
+		return ChestType.fromDisplayName(split[0]) != ChestType.NONE;
 	}
 
 	private boolean isRewardSlotValid(int slot) {
@@ -953,6 +1092,13 @@ public class AutoCroesus extends Module {
 		}
 
 		return new DecimalFormat("0").format(coins);
+	}
+
+	private static String formatSignedProfit(double coins) {
+		if (coins > 0) {
+			return "+" + formatProfit(coins);
+		}
+		return formatProfit(coins);
 	}
 
 	private static Map<String, String> createItemReplacements() {

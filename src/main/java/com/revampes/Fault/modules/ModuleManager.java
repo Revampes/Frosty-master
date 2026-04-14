@@ -40,6 +40,7 @@ import com.revampes.Fault.modules.impl.kuudra.Pearl;
 import com.revampes.Fault.modules.impl.kuudra.Priority;
 import com.revampes.Fault.modules.impl.kuudra.RemovePerks;
 import com.revampes.Fault.modules.impl.kuudra.SupplyHelper;
+import com.revampes.Fault.modules.impl.kuudra.Vesuvius;
 import com.revampes.Fault.modules.impl.mining.FrozenTreasure;
 import com.revampes.Fault.modules.impl.mining.NoBreakReset;
 import com.revampes.Fault.modules.impl.mining.SandNuker;
@@ -156,6 +157,7 @@ public class ModuleManager {
     public static Priority priority;
     public static Pearl pearl;
     public static CrateAura crateAura;
+    public static Vesuvius vesuvius;
     public static KeyHighlight keyHighlight;
     public static SlotBinds slotBinds;
     public static HotbarSwap hotbarSwap;
@@ -240,6 +242,7 @@ public class ModuleManager {
         this.addModule(priority = new Priority());
         this.addModule(pearl = new Pearl());
         this.addModule(crateAura = new CrateAura());
+        this.addModule(vesuvius = new Vesuvius());
         this.addModule(keyHighlight = new KeyHighlight());
         this.addModule(slotBinds = new SlotBinds());
         this.addModule(hotbarSwap = new HotbarSwap());
