@@ -52,6 +52,7 @@
     "TerminalClickMixin",
     "TerminalRenderMixin",
     "accessor.InGameHudAccessor",
+    "accessor.KeyboardAccessor",
     "accessor.KeyBindingAccessor",
     "accessor.MinecraftClientAccessor",
     "accessor.ProjectionMatrix2Accessor",

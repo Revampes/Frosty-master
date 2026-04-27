@@ -82,6 +82,7 @@ import com.revampes.Fault.modules.impl.render.NoOverlay;
 import com.revampes.Fault.modules.impl.render.PlayerESP;
 import com.revampes.Fault.modules.impl.render.TPS;
 import com.revampes.Fault.modules.impl.render.blockanimation.BlockAnimation;
+import com.revampes.Fault.modules.impl.wynncraft.SpellCombo;
 import com.revampes.Fault.settings.Setting;
 
 public class ModuleManager {
@@ -172,6 +173,7 @@ public class ModuleManager {
     public static AutoTerminals autoTerminals;
     public static DungeonMap dungeonMap;
     public static HidePlayer hidePlayer;
+    public static SpellCombo spellCombo;
 
     public void register() {
         this.addModule(tps = new TPS());
@@ -258,6 +260,7 @@ public class ModuleManager {
         this.addModule(autoTerminals = new AutoTerminals());
         this.addModule(dungeonMap = new DungeonMap());
         this.addModule(hidePlayer = new HidePlayer());
+        this.addModule(spellCombo = new SpellCombo());
         modules.sort(Comparator.comparing(Module::getName));
     }
 

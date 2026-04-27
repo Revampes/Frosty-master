@@ -271,6 +271,6 @@ public class Module {
     }
 
     public static enum category {
-        Combat, Movement, Render, Other, Client, Fishing, Foraging, Mining, Farming, Dungeon, Kuudra
+        Combat, Movement, Render, Other, Client, Fishing, Foraging, Mining, Farming, Dungeon, Kuudra, Wynncraft
     }
 }
