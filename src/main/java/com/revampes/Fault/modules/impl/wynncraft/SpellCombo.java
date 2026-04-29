@@ -47,7 +47,10 @@ public class SpellCombo extends Module {
 		SPELL_2,
 		SPELL_3,
 		SPELL_4,
-		RIGHT_CLICK
+		RIGHT_CLICK,
+		MIDDLE_CLICK,
+		BUTTON_4,
+		BUTTON_5
 	}
 
 	private static final long SPELL_KEY_HOLD_MS = 45L;
@@ -101,7 +104,7 @@ public class SpellCombo extends Module {
 
 	@Override
 	public String getDesc() {
-		return "Format combo actions with -> (example: V -> Z -> C -> RIGHT CLICK). Each combo needs at least 2 actions.";
+		return "Triggers: keyboard keys or mouse buttons (RC, LC, MC, BUTTON4, BUTTON5). Actions: keyboard keys or mouse buttons. Format with -> (e.g., V -> Z -> C -> RC or RC -> BUTTON4).";
 	}
 
 	@Override
@@ -166,8 +169,8 @@ public class SpellCombo extends Module {
 	}
 
 	private void handleTriggerPress(String comboName, InputSetting triggerSetting, InputSetting actionsSetting, int slot) {
-		int triggerKeyCode = parseKeyCode(triggerSetting.getValue());
-		boolean isDown = isPhysicalKeyDown(triggerKeyCode);
+		String triggerValue = triggerSetting.getValue();
+		boolean isDown = isTriggerInputDown(triggerValue);
 		boolean wasDown = getHeldState(slot);
 		setHeldState(slot, isDown);
 
@@ -175,7 +178,25 @@ public class SpellCombo extends Module {
 			return;
 		}
 
-		tryQueueCombo(comboName, triggerSetting, actionsSetting, triggerKeyCode);
+		tryQueueCombo(comboName, triggerValue, actionsSetting);
+	}
+
+	private boolean isTriggerInputDown(String triggerValue) {
+		if (triggerValue == null || triggerValue.isBlank()) {
+			return false;
+		}
+
+		String normalized = normalizeToken(triggerValue);
+		
+		// Check for mouse button triggers
+		Integer mouseButton = parseMouseButton(normalized);
+		if (mouseButton != null) {
+			return isMouseButtonDown(mouseButton);
+		}
+		
+		// Check for keyboard triggers
+		int keyCode = parseKeyCode(triggerValue);
+		return isPhysicalKeyDown(keyCode);
 	}
 
 	private boolean isPhysicalKeyDown(int keyCode) {
@@ -189,6 +210,30 @@ public class SpellCombo extends Module {
 		}
 
 		return GLFW.glfwGetKey(window, keyCode) == GLFW.GLFW_PRESS;
+	}
+
+	private boolean isMouseButtonDown(int mouseButton) {
+		if (mc.getWindow() == null) {
+			return false;
+		}
+
+		long window = mc.getWindow().getHandle();
+		if (window == 0L) {
+			return false;
+		}
+
+		return GLFW.glfwGetMouseButton(window, mouseButton) == GLFW.GLFW_PRESS;
+	}
+
+	private Integer parseMouseButton(String normalizedToken) {
+		return switch (normalizedToken) {
+			case "RIGHT", "RC", "RIGHTCLICK", "MOUSERIGHT", "RIGHTMOUSE" -> GLFW.GLFW_MOUSE_BUTTON_RIGHT;
+			case "LEFT", "LC", "LEFTCLICK", "MOUSELEFT", "LEFTMOUSE" -> GLFW.GLFW_MOUSE_BUTTON_LEFT;
+			case "MIDDLE", "MC", "MIDDLECLICK", "MOUSEMIDDLE" -> GLFW.GLFW_MOUSE_BUTTON_MIDDLE;
+			case "BUTTON4", "BTN4", "B4" -> GLFW.GLFW_MOUSE_BUTTON_4;
+			case "BUTTON5", "BTN5", "B5" -> GLFW.GLFW_MOUSE_BUTTON_5;
+			default -> null;
+		};
 	}
 
 	private boolean getHeldState(int slot) {
@@ -210,12 +255,7 @@ public class SpellCombo extends Module {
 		}
 	}
 
-	private boolean tryQueueCombo(String comboName, InputSetting triggerSetting, InputSetting actionsSetting, int pressedKey) {
-		int triggerKeyCode = parseKeyCode(triggerSetting.getValue());
-		if (triggerKeyCode == GLFW.GLFW_KEY_UNKNOWN || triggerKeyCode != pressedKey) {
-			return false;
-		}
-
+	private boolean tryQueueCombo(String comboName, String triggerValue, InputSetting actionsSetting) {
 		if (isBusy()) {
 			Utils.addChatMessage("§eSpellCombo is already running. Wait for the current combo to finish.");
 			return true;
@@ -239,8 +279,16 @@ public class SpellCombo extends Module {
 			case SPELL_2 -> executeSpellAction(2, cast2SpellKey, "Cast 2nd Spell");
 			case SPELL_3 -> executeSpellAction(3, cast3SpellKey, "Cast 3rd Spell");
 			case SPELL_4 -> executeSpellAction(4, cast4SpellKey, "Cast 4th Spell");
-			case RIGHT_CLICK -> tapInputKey(InputUtil.Type.MOUSE.createFromCode(GLFW.GLFW_MOUSE_BUTTON_RIGHT));
+			case RIGHT_CLICK -> executeMouseAction(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
+			case MIDDLE_CLICK -> executeMouseAction(GLFW.GLFW_MOUSE_BUTTON_MIDDLE);
+			case BUTTON_4 -> executeMouseAction(GLFW.GLFW_MOUSE_BUTTON_4);
+			case BUTTON_5 -> executeMouseAction(GLFW.GLFW_MOUSE_BUTTON_5);
 		};
+	}
+
+	private boolean executeMouseAction(int mouseButton) {
+		InputUtil.Key key = InputUtil.Type.MOUSE.createFromCode(mouseButton);
+		return pressAndQueueRelease(key, GLFW.GLFW_KEY_UNKNOWN);
 	}
 
 	private boolean executeSpellAction(int spellIndex, InputSetting spellKeySetting, String label) {
@@ -436,13 +484,17 @@ public class SpellCombo extends Module {
 	}
 
 	private long getDelayAfterActionMs(ComboAction action) {
-		long rightDelayMs = Math.max(0L, Math.round(rightClickDelay.getInput()));
-		if (action == ComboAction.RIGHT_CLICK) {
-			return rightDelayMs;
-		}
-
 		long leftDelayMs = Math.max(0L, Math.round(leftClickDelay.getInput()));
+		long rightDelayMs = Math.max(0L, Math.round(rightClickDelay.getInput()));
 		long spellStepDelay = Math.max(leftDelayMs, rightDelayMs);
+		
+		// Mouse button actions use rightClickDelay + spell step multiplier
+		if (action == ComboAction.RIGHT_CLICK || action == ComboAction.MIDDLE_CLICK || 
+		    action == ComboAction.BUTTON_4 || action == ComboAction.BUTTON_5) {
+			return rightDelayMs + (spellStepDelay * 3L);
+		}
+		
+		// Spell actions use standard delay multiplier
 		return spellStepDelay * 3L;
 	}
 
@@ -493,6 +545,15 @@ public class SpellCombo extends Module {
 
 		if (normalized.equals("RIGHT") || normalized.equals("RIGHTCLICK") || normalized.equals("MOUSERIGHT") || normalized.equals("RIGHTMOUSE") || normalized.equals("RC")) {
 			return ComboAction.RIGHT_CLICK;
+		}
+		if (normalized.equals("MIDDLE") || normalized.equals("MIDDLECLICK") || normalized.equals("MOUSEMIDDLE") || normalized.equals("MC")) {
+			return ComboAction.MIDDLE_CLICK;
+		}
+		if (normalized.equals("BUTTON4") || normalized.equals("BTN4") || normalized.equals("B4")) {
+			return ComboAction.BUTTON_4;
+		}
+		if (normalized.equals("BUTTON5") || normalized.equals("BTN5") || normalized.equals("B5")) {
+			return ComboAction.BUTTON_5;
 		}
 
 		return null;
